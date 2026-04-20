@@ -196,6 +196,18 @@ export interface TruthGuardAnalysis extends KOLAnalysis {
 
   // Cofacts community fact-check
   cofactsResult?: CofactsResult;
+
+  // Service degradation info — tells UI which external services were unavailable
+  degradation?: ServiceDegradation;
+}
+
+// Service degradation info — populated when external services are unavailable
+export type DegradationLevel = 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | 'L5';
+
+export interface ServiceDegradation {
+  level: DegradationLevel;
+  score: number;
+  services: string[];
 }
 
 // Cofacts (cofacts.tw) community fact-check types

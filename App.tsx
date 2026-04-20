@@ -15,6 +15,7 @@ import RescueMode from './components/RescueMode';
 import OfficialVerification from './components/OfficialVerification';
 import EvidencePack from './components/EvidencePack';
 import VerdictSummary from './components/VerdictSummary';
+import DegradationBanner from './components/DegradationBanner';
 import PrimaryActions from './components/PrimaryActions';
 import AgentFindings from './components/AgentFindings';
 import CofactsFindings from './components/CofactsFindings';
@@ -58,11 +59,19 @@ const UI_TEXT = {
     error: {
       title: 'Check Failed',
       titleSenior: 'Something Went Wrong',
-      tooManyRequests: 'Too many requests. Please wait a moment and try again.',
+      tooManyRequests: 'You\'ve hit the hourly usage limit for your device. Please wait a moment and try again.',
       notFound: 'Could not find information. Please try again.',
       badRequest: 'Invalid input. Please check what you entered.',
+      llmQuota: 'Our AI analysis service is at capacity right now. Please try again in an hour, or call 165 for urgent help.',
+      serviceConfig: 'A service configuration issue is preventing analysis. Please contact support.',
+      totalOutage: 'Our services are experiencing heavy load. Please try again later — or call 165 right away if this is urgent.',
       defaultMessage: 'An unexpected error occurred. Please try again.',
       defaultMessageSenior: 'We couldn\'t check this. Please try again or call 165 for help.'
+    },
+    degradation: {
+      l1: '⚠️ {services} is currently unavailable. Results are still reliable.',
+      l2: '⚠️ Several data sources unavailable ({services}). Analysis may be less complete than usual.',
+      l3: '⚠️ Most external verification services are at capacity. AI analysis still works, but third-party cross-check was skipped this time.',
     },
     common: {
       unknown: 'Unknown'
@@ -135,11 +144,19 @@ const UI_TEXT = {
     error: {
       title: '檢查失敗',
       titleSenior: '出了點問題',
-      tooManyRequests: '請求過於頻繁。請稍後再試。',
+      tooManyRequests: '您的裝置已達到本小時的使用次數上限，請稍後再試。',
       notFound: '找不到相關資訊。請重試。',
       badRequest: '輸入無效。請確認您輸入的內容。',
+      llmQuota: 'AI 分析服務目前已達使用上限，請一小時後再試，或撥打 165 諮詢。',
+      serviceConfig: '服務設定出現問題,請聯絡客服。',
+      totalOutage: '服務目前負載過高,請稍後再試。若有緊急狀況,請立即撥打 165。',
       defaultMessage: '發生未預期的錯誤。請重試。',
       defaultMessageSenior: '我們無法檢查這個。請重試或撥打 165 尋求協助。'
+    },
+    degradation: {
+      l1: '⚠️ {services} 暫時無法使用，但分析結果仍然可靠。',
+      l2: '⚠️ 多個資料來源暫時無法使用（{services}），分析可能不夠完整。',
+      l3: '⚠️ 多項外部查核服務已達上限，AI 分析仍可使用，但本次跳過第三方交叉比對。',
     },
     common: {
       unknown: '未知'
@@ -212,11 +229,19 @@ const UI_TEXT = {
     error: {
       title: 'Kiểm tra thất bại',
       titleSenior: 'Đã xảy ra sự cố',
-      tooManyRequests: 'Quá nhiều yêu cầu. Vui lòng đợi một lúc và thử lại.',
+      tooManyRequests: 'Thiết bị của bạn đã đạt giới hạn sử dụng trong giờ này. Vui lòng đợi một lúc rồi thử lại.',
       notFound: 'Không tìm thấy thông tin. Vui lòng thử lại.',
       badRequest: 'Dữ liệu nhập không hợp lệ. Vui lòng kiểm tra lại.',
+      llmQuota: 'Dịch vụ phân tích AI của chúng tôi tạm thời quá tải. Vui lòng thử lại sau một giờ hoặc gọi 165 để được hỗ trợ.',
+      serviceConfig: 'Sự cố cấu hình dịch vụ. Vui lòng liên hệ hỗ trợ.',
+      totalOutage: 'Các dịch vụ đang quá tải. Vui lòng thử lại sau — hoặc gọi 165 ngay nếu khẩn cấp.',
       defaultMessage: 'Đã xảy ra lỗi không mong muốn. Vui lòng thử lại.',
       defaultMessageSenior: 'Chúng tôi không thể kiểm tra điều này. Vui lòng thử lại hoặc gọi đường dây hỗ trợ.'
+    },
+    degradation: {
+      l1: '⚠️ {services} hiện không khả dụng. Kết quả vẫn đáng tin cậy.',
+      l2: '⚠️ Nhiều nguồn dữ liệu không khả dụng ({services}). Phân tích có thể chưa đầy đủ.',
+      l3: '⚠️ Hầu hết dịch vụ xác minh bên ngoài đã quá tải. AI phân tích vẫn hoạt động, nhưng lần này bỏ qua kiểm tra chéo.',
     },
     common: {
       unknown: 'Không rõ'
@@ -362,20 +387,33 @@ const App: React.FC = () => {
     } catch (err) {
       console.error(err);
 
-      // Handle specific API error codes
+      // Handle specific API error codes — prefer errorCode from the body
+      // (more specific than HTTP status), fall back to statusCode mapping.
       if (err instanceof APIError) {
-        switch (err.statusCode) {
-          case 429:
-            setError(t.error.tooManyRequests);
-            break;
-          case 404:
-            setError(t.error.notFound);
-            break;
-          case 400:
-            setError(t.error.badRequest);
-            break;
-          default:
-            setError(isSeniorMode ? t.error.defaultMessageSenior : t.error.defaultMessage);
+        // L5 (total outage) takes priority over the raw errorCode text
+        if (err.degradation?.level === 'L5') {
+          setError(t.error.totalOutage);
+        } else {
+          switch (err.errorCode) {
+            case 'LLM_QUOTA':
+              setError(t.error.llmQuota);
+              break;
+            case 'LLM_FAILED':
+              setError(t.error.serviceConfig);
+              break;
+            case 'LOCAL_RATE_LIMIT':
+              setError(t.error.tooManyRequests);
+              break;
+            case 'INVALID_INPUT':
+              setError(t.error.badRequest);
+              break;
+            default:
+              // Fall back to HTTP status when no errorCode
+              if (err.statusCode === 429) setError(t.error.tooManyRequests);
+              else if (err.statusCode === 404) setError(t.error.notFound);
+              else if (err.statusCode === 400) setError(t.error.badRequest);
+              else setError(isSeniorMode ? t.error.defaultMessageSenior : t.error.defaultMessage);
+          }
         }
       } else {
         setError(isSeniorMode ? t.error.defaultMessageSenior : t.error.defaultMessage);
@@ -675,6 +713,12 @@ const App: React.FC = () => {
                 </span>
               )}
             </div>
+
+            {analysis.degradation && analysis.degradation.level !== 'L0' && (
+              <div className="mb-4">
+                <DegradationBanner degradation={analysis.degradation} language={language} />
+              </div>
+            )}
 
             <VerdictSummary
               conclusion={analysis.conclusion}

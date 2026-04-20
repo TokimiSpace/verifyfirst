@@ -1,5 +1,60 @@
 import { GoogleGenAI } from "@google/genai";
 import { list, put } from "@vercel/blob";
+
+// =============================================================================
+// SAFE BLOB WRAPPERS — never throw; fall back to in-memory state on failure
+// =============================================================================
+
+interface SafeBlob { url: string; uploadedAt: string | Date }
+const inMemoryBlobs = new Map<string, { data: string; uploadedAt: Date; url: string }>();
+let blobDegraded = false;
+
+const safeList = async (prefix: string): Promise<{ blobs: SafeBlob[]; degraded: boolean }> => {
+  try {
+    const res = await list({ prefix });
+    return { blobs: res.blobs, degraded: false };
+  } catch (err) {
+    console.error('[Blob] list failed:', (err as Error).message);
+    blobDegraded = true;
+    const mem = inMemoryBlobs.get(prefix);
+    return { blobs: mem ? [{ url: mem.url, uploadedAt: mem.uploadedAt }] : [], degraded: true };
+  }
+};
+
+const safePut = async (path: string, body: string): Promise<{ degraded: boolean }> => {
+  try {
+    await put(path, body, { access: 'public', addRandomSuffix: false, contentType: 'application/json' });
+    return { degraded: false };
+  } catch (err) {
+    console.error('[Blob] put failed:', (err as Error).message);
+    blobDegraded = true;
+    inMemoryBlobs.set(path, {
+      data: body,
+      uploadedAt: new Date(),
+      url: `mem://${path}`,
+    });
+    return { degraded: true };
+  }
+};
+
+const safeFetchBlob = async (url: string): Promise<Response | null> => {
+  if (url.startsWith('mem://')) {
+    const mem = inMemoryBlobs.get(url.slice('mem://'.length));
+    if (!mem) return null;
+    return new Response(mem.data, { status: 200 });
+  }
+  try {
+    return await fetch(url);
+  } catch (err) {
+    console.error('[Blob] fetch failed:', (err as Error).message);
+    blobDegraded = true;
+    return null;
+  }
+};
+
+const isBlobDegraded = () => blobDegraded;
+const resetBlobHealth = () => { blobDegraded = false; };
+
 /**
  * Mask phone numbers and LINE IDs to protect PII before caching.
  */
@@ -20,6 +75,96 @@ const MAX_REQUESTS_PER_WINDOW = 10; // Max 10 API calls per IP per hour
 const MAX_INPUT_LENGTH = 2000; // Max length for URL or SMS text
 const ALLOWED_LANGUAGES = ['en', 'zh-TW', 'vi'];
 const ALLOWED_INPUT_TYPES = ['URL', 'SMS_TEXT', 'PHONE'];
+
+// =============================================================================
+// DEGRADATION TRACKING — classify per-service failures and compute severity
+// =============================================================================
+
+type ErrorCode =
+  | 'LLM_QUOTA'
+  | 'LLM_FAILED'
+  | 'LOCAL_RATE_LIMIT'
+  | 'STORAGE_DEGRADED'
+  | 'INVALID_INPUT'
+  | 'TOTAL_OUTAGE'
+  | 'SERVER_ERROR';
+
+type DegradationLevel = 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | 'L5';
+
+interface Degradation {
+  level: DegradationLevel;
+  score: number;
+  services: string[];
+}
+
+// Service weights — see plan: Gemini=10 (critical), Blob=2, side-sources=1
+const SERVICE_WEIGHT: Record<string, number> = {
+  Gemini: 10,
+  'Vercel Blob': 2,
+  'Safe Browsing': 1,
+  VirusTotal: 1,
+  Cofacts: 1,
+  ScamSniffer: 1,
+  RDAP: 1,
+  DNS: 1,
+};
+
+export function computeDegradation(services: string[], geminiFailed = false): Degradation {
+  const unique = [...new Set(services)];
+  const score = unique.reduce((sum, s) => sum + (SERVICE_WEIGHT[s] ?? 1), 0);
+
+  let level: DegradationLevel;
+  if (geminiFailed) {
+    const sideFailures = unique.filter(s => s !== 'Gemini').length;
+    level = sideFailures >= 3 ? 'L5' : 'L4';
+  } else if (score === 0) {
+    level = 'L0';
+  } else if (score <= 2) {
+    level = 'L1';
+  } else if (score <= 4) {
+    level = 'L2';
+  } else {
+    level = 'L3';
+  }
+
+  return { level, score, services: unique };
+}
+
+// Classify a caught error into a code. Uses multiple signals — SDK error.status,
+// error.code (Gemini sets RESOURCE_EXHAUSTED), and message regex as fallback.
+// Avoid the loose `message.includes('429')` match that caused the original bug.
+export function classifyError(err: any): { errorCode: ErrorCode; status: number; message: string } {
+  const msg = typeof err?.message === 'string' ? err.message : '';
+  const code = err?.code ?? err?.error?.code;
+  const status = err?.status ?? err?.response?.status;
+
+  const isQuota =
+    status === 429 ||
+    code === 'RESOURCE_EXHAUSTED' ||
+    /resource[_ ]exhausted|quota exceeded|quota_exceeded/i.test(msg);
+
+  if (isQuota) {
+    return {
+      errorCode: 'LLM_QUOTA',
+      status: 503,
+      message: 'AI analysis service temporarily at capacity',
+    };
+  }
+
+  if (status === 401 || status === 403 || /api[_ ]?key|unauthenticated|unauthorized/i.test(msg)) {
+    return {
+      errorCode: 'LLM_FAILED',
+      status: 500,
+      message: 'AI service authentication error',
+    };
+  }
+
+  return {
+    errorCode: 'SERVER_ERROR',
+    status: 500,
+    message: msg || 'An unexpected error occurred',
+  };
+}
 
 // Inflation Maps for minified schema
 const HISTORY_TYPE_MAP: Record<number, string> = {
@@ -270,67 +415,40 @@ const checkRateLimit = async (ip: string): Promise<{ allowed: boolean; remaining
   const ipHash = hashIP(ip);
   const rateLimitPath = `ratelimit/${ipHash}.json`;
 
-  try {
-    const { blobs } = await list({ prefix: rateLimitPath });
-    const now = Date.now();
+  const { blobs } = await safeList(rateLimitPath);
+  const now = Date.now();
 
-    if (blobs.length > 0) {
-      const blob = blobs[0];
-      const response = await fetch(blob.url);
-      const data = await safeParseJSON(response);
+  if (blobs.length > 0) {
+    const blob = blobs[0];
+    const response = await safeFetchBlob(blob.url);
+    const data = response ? await safeParseJSON(response) : null;
 
-      // If parsing failed or data is invalid, treat as no existing rate limit
-      if (!data || typeof data.windowStart !== 'number' || typeof data.count !== 'number') {
-        const newData = { windowStart: now, count: 1 };
-        await put(rateLimitPath, JSON.stringify(newData), {
-          access: 'public',
-          addRandomSuffix: false,
-          contentType: 'application/json'
-        });
-        return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
-      }
-
-      // Check if window has expired
-      if (now - data.windowStart > RATE_LIMIT_WINDOW_MS) {
-        // Reset window
-        const newData = { windowStart: now, count: 1 };
-        await put(rateLimitPath, JSON.stringify(newData), {
-          access: 'public',
-          addRandomSuffix: false,
-          contentType: 'application/json'
-        });
-        return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
-      }
-
-      // Window still active - check count
-      if (data.count >= MAX_REQUESTS_PER_WINDOW) {
-        return { allowed: false, remaining: 0 };
-      }
-
-      // Increment count
-      const newData = { windowStart: data.windowStart, count: data.count + 1 };
-      await put(rateLimitPath, JSON.stringify(newData), {
-        access: 'public',
-        addRandomSuffix: false,
-        contentType: 'application/json'
-      });
-      return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - newData.count };
+    // If parsing failed or data is invalid, treat as no existing rate limit
+    if (!data || typeof data.windowStart !== 'number' || typeof data.count !== 'number') {
+      await safePut(rateLimitPath, JSON.stringify({ windowStart: now, count: 1 }));
+      return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
     }
 
-    // No existing rate limit - create new
-    const newData = { windowStart: now, count: 1 };
-    await put(rateLimitPath, JSON.stringify(newData), {
-      access: 'public',
-      addRandomSuffix: false,
-      contentType: 'application/json'
-    });
-    return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
+    // Check if window has expired
+    if (now - data.windowStart > RATE_LIMIT_WINDOW_MS) {
+      await safePut(rateLimitPath, JSON.stringify({ windowStart: now, count: 1 }));
+      return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
+    }
 
-  } catch (error) {
-    console.error('Rate limit check error:', error);
-    // On error, allow request but log it
-    return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW };
+    // Window still active - check count
+    if (data.count >= MAX_REQUESTS_PER_WINDOW) {
+      return { allowed: false, remaining: 0 };
+    }
+
+    // Increment count
+    const newData = { windowStart: data.windowStart, count: data.count + 1 };
+    await safePut(rateLimitPath, JSON.stringify(newData));
+    return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - newData.count };
   }
+
+  // No existing rate limit - create new
+  await safePut(rateLimitPath, JSON.stringify({ windowStart: now, count: 1 }));
+  return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
 };
 
 /**
@@ -344,60 +462,46 @@ const buildCachePath = (cacheKey: string, language: string): string => {
  * Check if cached data exists and is still valid
  */
 const getCachedAnalysis = async (handle: string, language: string) => {
-  try {
-    const cachePath = buildCachePath(handle, language);
-    const { blobs } = await list({ prefix: cachePath });
+  const cachePath = buildCachePath(handle, language);
+  const { blobs } = await safeList(cachePath);
 
-    if (blobs.length === 0) {
-      return null;
-    }
-
-    const blob = blobs[0];
-    const uploadedAt = new Date(blob.uploadedAt).getTime();
-    const age = Date.now() - uploadedAt;
-
-    // Check if cache is expired (> 72 hours)
-    if (age > CACHE_DURATION_MS) {
-      console.log(`Cache expired for ${handle} (age: ${Math.round(age / 1000 / 60)} minutes)`);
-      return null;
-    }
-
-    // Fetch the cached data
-    const response = await fetch(blob.url);
-    const data = await safeParseJSON(response);
-
-    // If parsing failed, treat as cache miss
-    if (!data) {
-      console.log(`Cache data invalid for ${handle}, treating as miss`);
-      return null;
-    }
-
-    console.log(`Cache hit for ${handle} (age: ${Math.round(age / 1000 / 60)} minutes)`);
-    return {
-      data,
-      cachedAt: uploadedAt
-    };
-  } catch (error) {
-    console.error('Error reading cache:', error);
+  if (blobs.length === 0) {
     return null;
   }
+
+  const blob = blobs[0];
+  const uploadedAt = new Date(blob.uploadedAt).getTime();
+  const age = Date.now() - uploadedAt;
+
+  // Check if cache is expired (> 72 hours)
+  if (age > CACHE_DURATION_MS) {
+    console.log(`Cache expired for ${handle} (age: ${Math.round(age / 1000 / 60)} minutes)`);
+    return null;
+  }
+
+  // Fetch the cached data
+  const response = await safeFetchBlob(blob.url);
+  const data = response ? await safeParseJSON(response) : null;
+
+  // If parsing failed, treat as cache miss
+  if (!data) {
+    console.log(`Cache data invalid for ${handle}, treating as miss`);
+    return null;
+  }
+
+  console.log(`Cache hit for ${handle} (age: ${Math.round(age / 1000 / 60)} minutes)`);
+  return {
+    data,
+    cachedAt: uploadedAt
+  };
 };
 
 /**
  * Save analysis result to Vercel Blob cache
  */
 const setCachedAnalysis = async (handle: string, language: string, data: any) => {
-  try {
-    const cachePath = buildCachePath(handle, language);
-    await put(cachePath, JSON.stringify(data), {
-      access: 'public',
-      addRandomSuffix: false,
-      contentType: 'application/json'
-    });
-    console.log(`Cached analysis for ${handle}`);
-  } catch (error) {
-    console.error('Error writing cache:', error);
-  }
+  const cachePath = buildCachePath(handle, language);
+  await safePut(cachePath, JSON.stringify(data));
 };
 
 
@@ -424,7 +528,7 @@ interface CofactsResult {
   articles: CofactsArticle[];
 }
 
-async function queryCofacts(inputText: string): Promise<CofactsResult> {
+async function queryCofacts(inputText: string, degradedOut?: string[]): Promise<CofactsResult> {
   try {
     // Take up to 100 chars for search to avoid overly specific queries
     const searchText = inputText.slice(0, 100).trim();
@@ -471,7 +575,10 @@ async function queryCofacts(inputText: string): Promise<CofactsResult> {
     });
     clearTimeout(timeout);
 
-    if (!resp.ok) return { status: 'ERROR', totalMatches: 0, articles: [] };
+    if (!resp.ok) {
+      degradedOut?.push('Cofacts');
+      return { status: 'ERROR', totalMatches: 0, articles: [] };
+    }
 
     const json = await resp.json();
     const list = json?.data?.ListArticles;
@@ -493,7 +600,9 @@ async function queryCofacts(inputText: string): Promise<CofactsResult> {
     }));
 
     return { status: 'FOUND', totalMatches: list.totalCount, articles };
-  } catch {
+  } catch (err) {
+    console.error('[Cofacts] failed:', (err as Error).message);
+    degradedOut?.push('Cofacts');
     return { status: 'ERROR', totalMatches: 0, articles: [] };
   }
 }
@@ -615,10 +724,15 @@ function isBotChallenge(html: string, status: number): boolean {
 }
 
 // --- RDAP: domain registration info (no API key required) ---
-async function rdapFacts(hostname: string): Promise<Record<string, string>> {
+async function rdapFacts(hostname: string, degradedOut?: string[]): Promise<Record<string, string>> {
   try {
     const res = await fetchWithTimeout(`https://rdap.org/domain/${encodeURIComponent(hostname)}`);
-    if (!res.ok) return {};
+    if (!res.ok) {
+      // 404 is a valid signal (domain not registered) — NOT degradation.
+      // Any other non-ok status is an RDAP service failure.
+      if (res.status !== 404) degradedOut?.push('RDAP');
+      return {};
+    }
     const d = await res.json();
 
     const events: any[] = d.events || [];
@@ -638,15 +752,17 @@ async function rdapFacts(hostname: string): Promise<Record<string, string>> {
     if (expEvent?.eventDate) result.expiresDate = new Date(expEvent.eventDate).toISOString().split('T')[0];
     if (registrarName) result.registrar = String(registrarName);
     return result;
-  } catch {
+  } catch (err) {
+    console.error('[RDAP] failed:', (err as Error).message);
+    degradedOut?.push('RDAP');
     return {};
   }
 }
 
 // --- Google Safe Browsing v4 (optional — needs GOOGLE_SAFE_BROWSING_KEY) ---
-async function safeBrowsingCheck(url: string): Promise<{ status: 'CLEAN' | 'THREAT' | 'SKIP'; threats?: string[] }> {
+async function safeBrowsingCheck(url: string, degradedOut?: string[]): Promise<{ status: 'CLEAN' | 'THREAT' | 'SKIP'; threats?: string[] }> {
   const sbKey = process.env.GOOGLE_SAFE_BROWSING_KEY;
-  if (!sbKey) return { status: 'SKIP' };
+  if (!sbKey) return { status: 'SKIP' }; // not configured ≠ degraded
   try {
     const body = {
       client: { clientId: 'verify1st', clientVersion: '1.0' },
@@ -661,31 +777,41 @@ async function safeBrowsingCheck(url: string): Promise<{ status: 'CLEAN' | 'THRE
       `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${sbKey}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
-    if (!res.ok) return { status: 'SKIP' };
+    if (!res.ok) {
+      degradedOut?.push('Safe Browsing');
+      return { status: 'SKIP' };
+    }
     const d = await res.json();
     if (d.matches?.length > 0) {
       return { status: 'THREAT', threats: d.matches.map((m: any) => m.threatType as string) };
     }
     return { status: 'CLEAN' };
-  } catch {
+  } catch (err) {
+    console.error('[SafeBrowsing] failed:', (err as Error).message);
+    degradedOut?.push('Safe Browsing');
     return { status: 'SKIP' };
   }
 }
 
 // --- DNS via Google DoH (no API key required) ---
-async function dnsFacts(hostname: string): Promise<{ resolvable: boolean; ips: string[] }> {
+async function dnsFacts(hostname: string, degradedOut?: string[]): Promise<{ resolvable: boolean; ips: string[] }> {
   try {
     const res = await fetchWithTimeout(
       `https://dns.google/resolve?name=${encodeURIComponent(hostname)}&type=A`
     );
-    if (!res.ok) return { resolvable: false, ips: [] };
+    if (!res.ok) {
+      degradedOut?.push('DNS');
+      return { resolvable: false, ips: [] };
+    }
     const d = await res.json();
     const ips: string[] = (d.Answer || [])
       .filter((a: any) => a.type === 1)
       .map((a: any) => a.data as string)
       .slice(0, 3);
     return { resolvable: ips.length > 0, ips };
-  } catch {
+  } catch (err) {
+    console.error('[DNS] failed:', (err as Error).message);
+    degradedOut?.push('DNS');
     return { resolvable: false, ips: [] };
   }
 }
@@ -697,7 +823,7 @@ const SS_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const SS_DOMAINS_URL = 'https://raw.githubusercontent.com/scamsniffer/scam-database/main/blacklist/domains.json';
 const SS_ADDRESSES_URL = 'https://raw.githubusercontent.com/scamsniffer/scam-database/main/blacklist/address.json';
 
-async function getScamSnifferDB(): Promise<{ domains: Set<string>; addresses: Set<string> } | null> {
+async function getScamSnifferDB(degradedOut?: string[]): Promise<{ domains: Set<string>; addresses: Set<string> } | null> {
   const now = Date.now();
   if (_ssCache && (now - _ssCache.fetchedAt) < SS_CACHE_TTL_MS) return _ssCache;
 
@@ -710,7 +836,10 @@ async function getScamSnifferDB(): Promise<{ domains: Set<string>; addresses: Se
     ]);
     clearTimeout(id);
 
-    if (!domainsRes.ok || !addressesRes.ok) return _ssCache;
+    if (!domainsRes.ok || !addressesRes.ok) {
+      degradedOut?.push('ScamSniffer');
+      return _ssCache;
+    }
 
     const domains: string[] = await domainsRes.json();
     const addresses: string[] = await addressesRes.json();
@@ -721,16 +850,18 @@ async function getScamSnifferDB(): Promise<{ domains: Set<string>; addresses: Se
       fetchedAt: now,
     };
     return _ssCache;
-  } catch {
+  } catch (err) {
+    console.error('[ScamSniffer] fetch failed:', (err as Error).message);
+    degradedOut?.push('ScamSniffer');
     return _ssCache; // Return stale cache on fetch failure
   }
 }
 
-async function scamSnifferCheck(url: string): Promise<{ status: 'BLOCKED' | 'PASSED' | 'SKIP'; source?: string }> {
+async function scamSnifferCheck(url: string, degradedOut?: string[]): Promise<{ status: 'BLOCKED' | 'PASSED' | 'SKIP'; source?: string }> {
   let hostname: string;
   try { hostname = new URL(url).hostname.replace(/^www\./, '').toLowerCase(); } catch { return { status: 'SKIP' }; }
 
-  const db = await getScamSnifferDB();
+  const db = await getScamSnifferDB(degradedOut);
   if (!db) return { status: 'SKIP' };
 
   if (db.domains.has(hostname)) return { status: 'BLOCKED', source: 'exact match' };
@@ -745,8 +876,8 @@ async function scamSnifferCheck(url: string): Promise<{ status: 'BLOCKED' | 'PAS
   return { status: 'PASSED' };
 }
 
-async function scamSnifferAddressCheck(address: string): Promise<{ status: 'BLOCKED' | 'PASSED' | 'SKIP' }> {
-  const db = await getScamSnifferDB();
+async function scamSnifferAddressCheck(address: string, degradedOut?: string[]): Promise<{ status: 'BLOCKED' | 'PASSED' | 'SKIP' }> {
+  const db = await getScamSnifferDB(degradedOut);
   if (!db) return { status: 'SKIP' };
   return { status: db.addresses.has(address.toLowerCase()) ? 'BLOCKED' : 'PASSED' };
 }
@@ -777,9 +908,9 @@ interface VTResult {
   categories: string[];
 }
 
-async function virusTotalCheck(hostname: string): Promise<VTResult | null> {
+async function virusTotalCheck(hostname: string, degradedOut?: string[]): Promise<VTResult | null> {
   const key = process.env.VIRUSTOTAL_API_KEY;
-  if (!key) return null;
+  if (!key) return null; // not configured ≠ degraded
 
   // Return cached result if still fresh
   const cached = vtResultCache.get(hostname);
@@ -787,8 +918,11 @@ async function virusTotalCheck(hostname: string): Promise<VTResult | null> {
     return cached.result;
   }
 
-  // Skip if rate limit would be exceeded
-  if (!canCallVirusTotal()) return null;
+  // Local rate limiter hit — VirusTotal's free tier is tight; treat as soft degradation
+  if (!canCallVirusTotal()) {
+    degradedOut?.push('VirusTotal');
+    return null;
+  }
   vtCallTimestamps.push(Date.now());
 
   try {
@@ -796,7 +930,11 @@ async function virusTotalCheck(hostname: string): Promise<VTResult | null> {
       `https://www.virustotal.com/api/v3/domains/${encodeURIComponent(hostname)}`,
       { headers: { 'x-apikey': key } }
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // 404 from VT means "domain not in database" — not a failure
+      if (res.status !== 404) degradedOut?.push('VirusTotal');
+      return null;
+    }
     const d = await res.json();
     const attrs = d.data?.attributes ?? {};
     const stats = attrs.last_analysis_stats ?? {};
@@ -811,7 +949,9 @@ async function virusTotalCheck(hostname: string): Promise<VTResult | null> {
     };
     vtResultCache.set(hostname, { result, cachedAt: Date.now() });
     return result;
-  } catch {
+  } catch (err) {
+    console.error('[VirusTotal] failed:', (err as Error).message);
+    degradedOut?.push('VirusTotal');
     return null;
   }
 }
@@ -833,16 +973,16 @@ function formatVTResult(vt: VTResult): string {
 }
 
 // --- Gather all URL facts and format as prompt section ---
-async function buildURLFactsSection(url: string): Promise<string> {
+async function buildURLFactsSection(url: string, degradedOut?: string[]): Promise<string> {
   let hostname: string;
   try { hostname = new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
 
   const [rdap, sb, dns, ss, vt] = await Promise.allSettled([
-    rdapFacts(hostname),
-    safeBrowsingCheck(url),
-    dnsFacts(hostname),
-    scamSnifferCheck(url),
-    virusTotalCheck(hostname),
+    rdapFacts(hostname, degradedOut),
+    safeBrowsingCheck(url, degradedOut),
+    dnsFacts(hostname, degradedOut),
+    scamSnifferCheck(url, degradedOut),
+    virusTotalCheck(hostname, degradedOut),
   ]);
 
   const lines: string[] = ['=== OBJECTIVE PRE-CHECKS (treat as verified ground truth) ==='];
@@ -942,7 +1082,7 @@ function buildPhoneFactsSection(e164: string): string {
 }
 
 // --- SMS: extract embedded URLs/wallets/phones and check them ---
-async function buildSMSFactsSection(text: string): Promise<string> {
+async function buildSMSFactsSection(text: string, degradedOut?: string[]): Promise<string> {
   const urlMatches = [...text.matchAll(/https?:\/\/[^\s<>"{}|\\^`[\]]+/gi)].map(m => m[0]);
   const uniqueURLs = [...new Set(urlMatches)].slice(0, 3);
   const phoneMatches = [...text.matchAll(/(?:\+886|886|0)[89]\d{8}|\+\d{8,14}/g)].map(m => m[0]);
@@ -960,10 +1100,10 @@ async function buildSMSFactsSection(text: string): Promise<string> {
     try { hostname = new URL(url).hostname.replace(/^www\./, ''); } catch { continue; }
 
     const [rdap, sb, ss, vt] = await Promise.allSettled([
-      rdapFacts(hostname),
-      safeBrowsingCheck(url),
-      scamSnifferCheck(url),
-      virusTotalCheck(hostname),
+      rdapFacts(hostname, degradedOut),
+      safeBrowsingCheck(url, degradedOut),
+      scamSnifferCheck(url, degradedOut),
+      virusTotalCheck(hostname, degradedOut),
     ]);
     lines.push(`\nURL: ${url}`);
     const rd = rdap.status === 'fulfilled' ? rdap.value : {};
@@ -983,7 +1123,7 @@ async function buildSMSFactsSection(text: string): Promise<string> {
   }
 
   for (const wallet of uniqueWallets) {
-    const result = await scamSnifferAddressCheck(wallet);
+    const result = await scamSnifferAddressCheck(wallet, degradedOut);
     lines.push(`\nWallet Address: ${wallet}`);
     if (result.status !== 'SKIP') {
       lines.push(`  ScamSniffer: ${result.status === 'BLOCKED' ? '🚨 BLOCKED — confirmed scam wallet address' : '✅ Not on scam wallet blacklist'}`);
@@ -1486,6 +1626,10 @@ export default async function handler(req: any, res: any) {
   const requestBotKey = req.headers['x-bot-key'];
   const isBotRequest = botApiKey && requestBotKey === botApiKey;
 
+  // Per-request degraded-service tracking
+  resetBlobHealth();
+  const degradedServices: string[] = [];
+
   try {
     const { input: rawInput, inputType: rawInputType, language: rawLanguage, forceRefresh } = req.body;
 
@@ -1493,6 +1637,7 @@ export default async function handler(req: any, res: any) {
     const inputContent = rawInput;
     if (!inputContent) {
       return res.status(400).json({
+        errorCode: 'INVALID_INPUT',
         error: 'Missing input. Please provide a URL, phone number, or message.'
       });
     }
@@ -1506,6 +1651,7 @@ export default async function handler(req: any, res: any) {
     const sanitizedInput = sanitizeInput(inputContent, detectedType);
     if (!sanitizedInput) {
       return res.status(400).json({
+        errorCode: 'INVALID_INPUT',
         error: detectedType === 'URL'
           ? 'Invalid URL format. Please provide a valid URL.'
           : detectedType === 'PHONE'
@@ -1566,11 +1712,14 @@ export default async function handler(req: any, res: any) {
         delete normalizedCache.totalLosses;
         delete normalizedCache.sources;
 
+        // If Blob was degraded even on cache read, report it; otherwise L0.
+        const cacheDegraded: string[] = isBlobDegraded() ? ['Vercel Blob'] : [];
         return res.status(200).json({
           ...normalizedCache,
           handle: normalizedCache.handle || '',
           source: 'cache',
-          cachedAt: cached.cachedAt
+          cachedAt: cached.cachedAt,
+          degradation: computeDegradation(cacheDegraded)
         });
       }
     }
@@ -1585,6 +1734,7 @@ export default async function handler(req: any, res: any) {
 
       if (!rateLimit.allowed) {
         return res.status(429).json({
+          errorCode: 'LOCAL_RATE_LIMIT',
           error: 'Rate limit exceeded. Please try again later.',
           retryAfter: Math.ceil(RATE_LIMIT_WINDOW_MS / 1000 / 60) + ' minutes'
         });
@@ -1596,15 +1746,15 @@ export default async function handler(req: any, res: any) {
     // === GATHER OBJECTIVE FACTS (parallel, before AI call) ===
     let factsSection = '';
     const factsPromise = (async () => {
-      if (detectedType === 'URL') return buildURLFactsSection(sanitizedInput);
+      if (detectedType === 'URL') return buildURLFactsSection(sanitizedInput, degradedServices);
       if (detectedType === 'PHONE') return buildPhoneFactsSection(sanitizedInput);
-      if (detectedType === 'SMS_TEXT') return buildSMSFactsSection(sanitizedInput);
+      if (detectedType === 'SMS_TEXT') return buildSMSFactsSection(sanitizedInput, degradedServices);
       return '';
     })();
 
     // Query Cofacts for SMS_TEXT (most relevant) and URL types
     const cofactsPromise = (detectedType === 'SMS_TEXT' || detectedType === 'URL')
-      ? queryCofacts(sanitizedInput)
+      ? queryCofacts(sanitizedInput, degradedServices)
       : Promise.resolve({ status: 'NOT_FOUND' as const, totalMatches: 0, articles: [] });
 
     const agentPromise = buildAgentVerification(normalizedInput, detectedType);
@@ -2023,7 +2173,11 @@ OUTPUT JSON ONLY:
     // Skip: bot requests (bypass rate limit), force refresh (duplicate records), oversized input
     const shouldCollectML = !isBotRequest && !forceRefresh && inputContent.length <= 10000;
     if (!shouldCollectML) {
-      return res.status(200).json(fullData);
+      if (isBlobDegraded()) degradedServices.push('Vercel Blob');
+      return res.status(200).json({
+        ...fullData,
+        degradation: computeDegradation(degradedServices)
+      });
     }
 
     const submissionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2071,32 +2225,32 @@ OUTPUT JSON ONLY:
       void logToGoogleSheets(webhookUrl, sheetsPayload);
     }
 
+    if (isBlobDegraded()) degradedServices.push('Vercel Blob');
     return res.status(200).json({
       ...fullData,
-      source: 'api'
+      source: 'api',
+      degradation: computeDegradation(degradedServices)
     });
 
   } catch (error: any) {
-    console.error("API Error:", error);
+    console.error('API Error:', error?.message, error?.stack);
 
-    // Handle specific error types
-    let status = 500;
-    let errorMessage = error.message || 'An unexpected error occurred';
+    // The thrown error is from the critical path (Gemini or unexpected).
+    // Side-services already caught their own failures into `degradedServices`.
+    const classified = classifyError(error);
 
-    if (error.message?.includes('429') || error.status === 429) {
-      status = 429;
-      errorMessage = 'Rate limit exceeded. Please try again later.';
-    } else if (error.message?.includes('API key')) {
-      status = 500;
-      errorMessage = 'Server configuration error: Invalid API key';
-    } else if (error.message?.includes('grounding') || error.message?.includes('search')) {
-      status = 503;
-      errorMessage = 'Google Search grounding temporarily unavailable. Please try again.';
-    }
+    // If Gemini is down, compute severity including side-service state —
+    // this determines L4 (AI only) vs L5 (AI + multiple sources down).
+    const isLLMFailure = classified.errorCode === 'LLM_QUOTA' || classified.errorCode === 'LLM_FAILED';
+    const allFailed = [...degradedServices, 'Gemini'];
+    const degradation = isLLMFailure ? computeDegradation(allFailed, true) : undefined;
 
-    return res.status(status).json({
-      error: errorMessage,
-      groundedSearch: false
+    return res.status(classified.status).json({
+      errorCode: classified.errorCode,
+      error: classified.message,
+      degradation,
+      retryAfter: classified.errorCode === 'LLM_QUOTA' ? '1 hour' : undefined,
+      groundedSearch: false,
     });
   }
 }

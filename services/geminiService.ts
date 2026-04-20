@@ -1,11 +1,29 @@
 import { TruthGuardAnalysis, Language, InputType } from "../types";
 
+export type APIErrorCode =
+  | 'LLM_QUOTA'
+  | 'LLM_FAILED'
+  | 'LOCAL_RATE_LIMIT'
+  | 'INVALID_INPUT'
+  | 'TOTAL_OUTAGE'
+  | 'SERVER_ERROR';
+
+export interface APIDegradation {
+  level: 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | 'L5';
+  score: number;
+  services: string[];
+}
+
 export class APIError extends Error {
   statusCode: number;
-  constructor(message: string, statusCode: number) {
+  errorCode?: APIErrorCode;
+  degradation?: APIDegradation;
+  constructor(message: string, statusCode: number, errorCode?: APIErrorCode, degradation?: APIDegradation) {
     super(message);
     this.name = 'APIError';
     this.statusCode = statusCode;
+    this.errorCode = errorCode;
+    this.degradation = degradation;
   }
 }
 
@@ -34,12 +52,10 @@ export const analyzeTruthGuard = async (
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     const message = errorData.error || `HTTP error! status: ${response.status}`;
+    const errorCode = errorData.errorCode as APIErrorCode | undefined;
+    const degradation = errorData.degradation as APIDegradation | undefined;
 
-    if (response.status === 429) throw new APIError("Rate limit exceeded", 429);
-    if (response.status === 404) throw new APIError("Not found", 404);
-    if (response.status === 400) throw new APIError("Bad request", 400);
-
-    throw new APIError(message, response.status);
+    throw new APIError(message, response.status, errorCode, degradation);
   }
 
   const data = await response.json();
