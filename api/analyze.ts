@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { list, put } from "@vercel/blob";
-import { isExampleInput, getExampleResponse } from "./example-responses";
+import { isExampleInput, getExampleResponse } from "./example-responses.js";
 
 // =============================================================================
 // SAFE BLOB WRAPPERS — never throw; fall back to in-memory state on failure
