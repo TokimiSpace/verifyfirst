@@ -46,6 +46,47 @@ const SAFE_DOMAINS: Array<{
       vi: 'Trang cá nhân của tokimi, người tạo ra VerifyFirst AI.',
     },
   },
+  {
+    domain: 'pay.tokimi.space',
+    label: {
+      en: 'tokimi Pay — Official Payment Service',
+      'zh-TW': 'tokimi Pay — 官方支付服務',
+      vi: 'tokimi Pay — Dịch vụ thanh toán chính thức',
+    },
+    description: {
+      en: 'Official payment service operated by tokimi. Verified safe.',
+      'zh-TW': '由 tokimi 營運的官方支付服務,已驗證安全。',
+      vi: 'Dịch vụ thanh toán chính thức do tokimi vận hành. Đã xác minh an toàn.',
+    },
+  },
+  {
+    domain: 'ifandonlyif.io',
+    aliases: ['www.ifandonlyif.io'],
+    label: {
+      en: 'ifandonlyif.io — Official Site',
+      'zh-TW': 'ifandonlyif.io — 官方網站',
+      vi: 'ifandonlyif.io — Trang chính thức',
+    },
+    description: {
+      en: 'Official site of ifandonlyif.io. Verified safe.',
+      'zh-TW': 'ifandonlyif.io 官方網站,已驗證安全。',
+      vi: 'Trang chính thức của ifandonlyif.io. Đã xác minh an toàn.',
+    },
+  },
+  {
+    domain: 'bridgetime.org',
+    aliases: ['www.bridgetime.org'],
+    label: {
+      en: 'bridgetime.org — Official Site',
+      'zh-TW': 'bridgetime.org — 官方網站',
+      vi: 'bridgetime.org — Trang chính thức',
+    },
+    description: {
+      en: 'Official site of bridgetime.org. Verified safe.',
+      'zh-TW': 'bridgetime.org 官方網站,已驗證安全。',
+      vi: 'Trang chính thức của bridgetime.org. Đã xác minh an toàn.',
+    },
+  },
 ];
 
 const DOMAIN_MAP: Map<string, typeof SAFE_DOMAINS[number]> = new Map();
