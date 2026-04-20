@@ -116,6 +116,64 @@ describe('POST /api/analyze — error classification', () => {
   });
 });
 
+describe('POST /api/analyze — example short-circuit', () => {
+  it('returns canned response for a known example chip input without calling Gemini', async () => {
+    const { default: handler } = await import('./analyze');
+
+    const res = makeRes();
+    await handler(
+      makeReq({
+        input: 'https://bit.ly/tw-sale-event',
+        inputType: 'URL',
+        language: 'en',
+      }),
+      res
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.source).toBe('example');
+    expect(res.jsonBody.scamProbability).toBeGreaterThan(0);
+    expect(res.jsonBody.conclusion).toBeTruthy();
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
+  it('returns localized canned response (zh-TW) for a known SMS_TEXT sample', async () => {
+    const { default: handler } = await import('./analyze');
+
+    const res = makeRes();
+    await handler(
+      makeReq({
+        input: '您的包裹無法投遞，請點擊更新地址：https://post-tw-delivery.net/verify',
+        inputType: 'SMS_TEXT',
+        language: 'zh-TW',
+      }),
+      res
+    );
+
+    expect(res.jsonBody.source).toBe('example');
+    expect(res.jsonBody.conclusion).toMatch(/包裹|釣魚|詐騙/);
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
+  it('does NOT short-circuit for inputs that are not known examples', async () => {
+    const { default: handler } = await import('./analyze');
+
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 50, sp: 50, v: 'x', cn: 'x', b: 'x', d: 'x' }),
+      candidates: [{ groundingMetadata: {} }],
+    });
+
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 'random new input text', inputType: 'SMS_TEXT', language: 'en' }),
+      res
+    );
+
+    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
+    expect(res.jsonBody.source).not.toBe('example');
+  });
+});
+
 describe('POST /api/analyze — happy-path degradation', () => {
   it('returns degradation.level=L0 when Gemini succeeds and no side services failed', async () => {
     const { default: handler } = await import('./analyze');

@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { list, put } from "@vercel/blob";
+import { isExampleInput, getExampleResponse } from "./example-responses";
 
 // =============================================================================
 // SAFE BLOB WRAPPERS — never throw; fall back to in-memory state on failure
@@ -1662,6 +1663,18 @@ export default async function handler(req: any, res: any) {
 
     // Validate language
     const language = ALLOWED_LANGUAGES.includes(rawLanguage) ? rawLanguage : 'en';
+
+    // === EXAMPLE SHORT-CIRCUIT ===
+    // Demo chips in SearchInput populate known sample inputs. Serve pre-baked
+    // responses for those so clicks burn zero upstream quota (Gemini, Safe
+    // Browsing, VirusTotal, agent-sandbox) and so the scam content stays out
+    // of the frontend bundle that crawlers can index.
+    if (isExampleInput(sanitizedInput, detectedType as any)) {
+      const exampleRes = getExampleResponse(sanitizedInput, detectedType as any, language);
+      if (exampleRes) {
+        return res.status(200).json(exampleRes);
+      }
+    }
 
     // Generate cache key
     const cacheKey = generateCacheKey(sanitizedInput, detectedType);
