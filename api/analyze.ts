@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { list, put } from "@vercel/blob";
 import { isExampleInput, getExampleResponse } from "./example-responses.js";
+import { isKnownSafeUrl, getSafeResponse } from "./safe-domains.js";
 
 // =============================================================================
 // SAFE BLOB WRAPPERS — never throw; fall back to in-memory state on failure
@@ -1673,6 +1674,17 @@ export default async function handler(req: any, res: any) {
       const exampleRes = getExampleResponse(sanitizedInput, detectedType as any, language);
       if (exampleRes) {
         return res.status(200).json(exampleRes);
+      }
+    }
+
+    // === SELF / KNOWN-SAFE SHORT-CIRCUIT ===
+    // Prevent the analyzer from flagging its own site (or other known-safe
+    // domains) as a scam due to false-positive keyword matches in educational
+    // copy ("付款", "投資", "LINE") and a very new domain age.
+    if (detectedType === 'URL' && isKnownSafeUrl(sanitizedInput)) {
+      const safeRes = getSafeResponse(sanitizedInput, language);
+      if (safeRes) {
+        return res.status(200).json(safeRes);
       }
     }
 
