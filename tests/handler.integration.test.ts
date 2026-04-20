@@ -45,7 +45,7 @@ const makeReq = (body: Record<string, unknown>) => ({
 
 describe('POST /api/analyze — error classification', () => {
   it('returns errorCode=LLM_QUOTA / status=503 when Gemini throws a 429', async () => {
-    const { default: handler } = await import('./analyze');
+    const { default: handler } = await import('../api/analyze');
 
     mockGenerateContent.mockRejectedValueOnce(
       Object.assign(new Error('Too Many Requests'), { status: 429 })
@@ -67,7 +67,7 @@ describe('POST /api/analyze — error classification', () => {
   });
 
   it('returns errorCode=LLM_FAILED when Gemini throws 401', async () => {
-    const { default: handler } = await import('./analyze');
+    const { default: handler } = await import('../api/analyze');
 
     mockGenerateContent.mockRejectedValueOnce(
       Object.assign(new Error('Unauthorized'), { status: 401 })
@@ -84,7 +84,7 @@ describe('POST /api/analyze — error classification', () => {
   });
 
   it('does NOT misclassify a non-quota error that has "429" in the stack trace', async () => {
-    const { default: handler } = await import('./analyze');
+    const { default: handler } = await import('../api/analyze');
 
     // This is the exact regression the original bug exhibited —
     // an unrelated error whose message happened to contain "429".
@@ -103,7 +103,7 @@ describe('POST /api/analyze — error classification', () => {
   });
 
   it('returns 400 with errorCode=INVALID_INPUT when body is missing', async () => {
-    const { default: handler } = await import('./analyze');
+    const { default: handler } = await import('../api/analyze');
 
     const res = makeRes();
     await handler(
@@ -118,7 +118,7 @@ describe('POST /api/analyze — error classification', () => {
 
 describe('POST /api/analyze — example short-circuit', () => {
   it('returns canned response for a known example chip input without calling Gemini', async () => {
-    const { default: handler } = await import('./analyze');
+    const { default: handler } = await import('../api/analyze');
 
     const res = makeRes();
     await handler(
@@ -138,7 +138,7 @@ describe('POST /api/analyze — example short-circuit', () => {
   });
 
   it('returns localized canned response (zh-TW) for a known SMS_TEXT sample', async () => {
-    const { default: handler } = await import('./analyze');
+    const { default: handler } = await import('../api/analyze');
 
     const res = makeRes();
     await handler(
@@ -156,7 +156,7 @@ describe('POST /api/analyze — example short-circuit', () => {
   });
 
   it('does NOT short-circuit for inputs that are not known examples', async () => {
-    const { default: handler } = await import('./analyze');
+    const { default: handler } = await import('../api/analyze');
 
     mockGenerateContent.mockResolvedValueOnce({
       text: JSON.stringify({ ts: 50, sp: 50, v: 'x', cn: 'x', b: 'x', d: 'x' }),
@@ -176,7 +176,7 @@ describe('POST /api/analyze — example short-circuit', () => {
 
 describe('POST /api/analyze — happy-path degradation', () => {
   it('returns degradation.level=L0 when Gemini succeeds and no side services failed', async () => {
-    const { default: handler } = await import('./analyze');
+    const { default: handler } = await import('../api/analyze');
 
     mockGenerateContent.mockResolvedValueOnce({
       text: JSON.stringify({ ts: 80, sp: 20, v: 'test verdict', cn: 'safe', b: 'bio', d: 'name' }),

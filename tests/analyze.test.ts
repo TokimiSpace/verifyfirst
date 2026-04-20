@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyError, computeDegradation } from './analyze';
+import { classifyError, computeDegradation } from '../api/analyze';
 
 describe('classifyError', () => {
   it('classifies Gemini error.status=429 as LLM_QUOTA/503', () => {
