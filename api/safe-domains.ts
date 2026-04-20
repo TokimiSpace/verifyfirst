@@ -64,32 +64,46 @@ function hostnameOf(url: string): string | null {
   }
 }
 
-export function isKnownSafeUrl(url: string): boolean {
-  const host = hostnameOf(url);
-  if (!host) return false;
-  if (DOMAIN_MAP.has(host)) return true;
-  // also match any subdomain of a listed apex (e.g. blog.verify1st.tw)
+// Resolve the hostname from either a full URL (https://verify1st.tw/...) or a
+// bare domain string pasted without a protocol (verify1st.tw). Anything with
+// whitespace or non-domain characters returns null.
+function resolveHost(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const direct = hostnameOf(trimmed);
+  if (direct) return direct;
+  // Only retry if the input looks like a single token that could be a bare domain.
+  if (/\s/.test(trimmed)) return null;
+  return hostnameOf(`https://${trimmed}`);
+}
+
+function matchAllowlist(host: string): typeof SAFE_DOMAINS[number] | undefined {
+  if (DOMAIN_MAP.has(host)) return DOMAIN_MAP.get(host);
   const parts = host.split('.');
   for (let i = 0; i < parts.length - 1; i++) {
     const suffix = parts.slice(i).join('.');
-    if (DOMAIN_MAP.has(suffix)) return true;
+    if (DOMAIN_MAP.has(suffix)) return DOMAIN_MAP.get(suffix);
   }
-  return false;
+  return undefined;
+}
+
+export function isKnownSafeUrl(url: string): boolean {
+  const host = resolveHost(url);
+  if (!host) return false;
+  return !!matchAllowlist(host);
 }
 
 export function getSafeResponse(url: string, language: string): any | null {
-  const host = hostnameOf(url);
+  const host = resolveHost(url);
   if (!host) return null;
-
-  let entry = DOMAIN_MAP.get(host);
-  if (!entry) {
-    const parts = host.split('.');
-    for (let i = 0; i < parts.length - 1; i++) {
-      const suffix = parts.slice(i).join('.');
-      if (DOMAIN_MAP.has(suffix)) { entry = DOMAIN_MAP.get(suffix); break; }
-    }
-  }
+  const entry = matchAllowlist(host);
   if (!entry) return null;
+
+  // Normalize to a canonical URL for display so bare-domain and with-protocol
+  // inputs produce identical output.
+  const canonicalUrl = url.startsWith('http://') || url.startsWith('https://')
+    ? url
+    : `https://${host}`;
 
   const lang = (['en', 'zh-TW', 'vi'] as const).includes(language as Language)
     ? (language as Language)
@@ -110,7 +124,7 @@ export function getSafeResponse(url: string, language: string): any | null {
     history: [],
     inputType: 'URL',
     originalInput: url,
-    normalizedInput: { url, domain: host.replace(/^www\./, '') },
+    normalizedInput: { url: canonicalUrl, domain: host.replace(/^www\./, '') },
     scamProbability: 2,
     riskSignals: [],
     suggestedActions: [{

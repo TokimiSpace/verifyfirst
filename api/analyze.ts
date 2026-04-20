@@ -1681,7 +1681,11 @@ export default async function handler(req: any, res: any) {
     // Prevent the analyzer from flagging its own site (or other known-safe
     // domains) as a scam due to false-positive keyword matches in educational
     // copy ("付款", "投資", "LINE") and a very new domain age.
-    if (detectedType === 'URL' && isKnownSafeUrl(sanitizedInput)) {
+    //
+    // Runs for URL type AND SMS_TEXT (bare domain like `verify1st.tw` without
+    // a protocol prefix). isKnownSafeUrl only matches when the whole input is
+    // a single hostname — so "verify1st.tw 是詐騙嗎" won't short-circuit.
+    if ((detectedType === 'URL' || detectedType === 'SMS_TEXT') && isKnownSafeUrl(sanitizedInput)) {
       const safeRes = getSafeResponse(sanitizedInput, language);
       if (safeRes) {
         return res.status(200).json(safeRes);

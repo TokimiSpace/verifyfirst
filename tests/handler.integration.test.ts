@@ -174,6 +174,47 @@ describe('POST /api/analyze — example short-circuit', () => {
   });
 });
 
+describe('POST /api/analyze — self / known-safe-domain short-circuit', () => {
+  it('short-circuits "https://verify1st.tw" URL input to verified_safe', async () => {
+    const { default: handler } = await import('../api/analyze');
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 'https://verify1st.tw', inputType: 'URL', language: 'zh-TW' }),
+      res
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.source).toBe('verified_safe');
+    expect(res.jsonBody.finalVerdict).toBe('A_MARKETING');
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
+  it('short-circuits bare domain "verify1st.tw" (no protocol, SMS_TEXT classification)', async () => {
+    const { default: handler } = await import('../api/analyze');
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 'verify1st.tw', inputType: 'SMS_TEXT', language: 'zh-TW' }),
+      res
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.source).toBe('verified_safe');
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
+  it('does NOT short-circuit SMS_TEXT that contains the domain inside other text', async () => {
+    const { default: handler } = await import('../api/analyze');
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 50, sp: 50, v: 'x', cn: 'x', b: 'x', d: 'x' }),
+      candidates: [{ groundingMetadata: {} }],
+    });
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 'verify1st.tw 是詐騙嗎', inputType: 'SMS_TEXT', language: 'zh-TW' }),
+      res
+    );
+    expect(res.jsonBody.source).not.toBe('verified_safe');
+  });
+});
+
 describe('POST /api/analyze — happy-path degradation', () => {
   it('returns degradation.level=L0 when Gemini succeeds and no side services failed', async () => {
     const { default: handler } = await import('../api/analyze');
