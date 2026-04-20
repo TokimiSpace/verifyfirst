@@ -27,7 +27,7 @@ const TRANSLATIONS = {
       HANDLE: 'Account',
     },
     detectedLabel: 'Detected:',
-    scenarioHint: 'Taiwan Phase 1 examples — click to try one:',
+    scenarioHint: 'Example scam patterns (key words redacted with xxxxx) — click any card to see the analysis:',
     uploadImage: 'Upload Screenshot',
     uploadTxt: 'Upload .txt file',
     imageReady: 'Screenshot ready — click Check to analyze',
@@ -52,7 +52,7 @@ const TRANSLATIONS = {
       HANDLE: '帳號',
     },
     detectedLabel: '偵測到：',
-    scenarioHint: '台灣 Phase 1 常見入口，點擊帶入範例：',
+    scenarioHint: '詐騙範例（關鍵字以 xxxxx 遮蔽）— 點擊任一卡片查看分析：',
     uploadImage: '上傳截圖',
     uploadTxt: '上傳 .txt 文字檔',
     imageReady: '截圖已就緒，點擊「檢查」開始分析',
@@ -77,7 +77,7 @@ const TRANSLATIONS = {
       HANDLE: 'Tài khoản',
     },
     detectedLabel: 'Phát hiện:',
-    scenarioHint: 'Các tình huống Phase 1 tại Đài Loan — nhấn để thử ví dụ:',
+    scenarioHint: 'Mẫu lừa đảo ví dụ (từ khóa đã được che bằng xxxxx) — nhấp vào thẻ bất kỳ để xem phân tích:',
     uploadImage: 'Tải ảnh chụp màn hình',
     uploadTxt: 'Tải file .txt',
     imageReady: 'Ảnh chụp màn hình đã sẵn sàng — nhấn Kiểm tra để phân tích',
@@ -90,35 +90,61 @@ const TRANSLATIONS = {
   },
 };
 
-// Scenario chips — each fills the input with a representative example
+// Scenario chips — each fills the input with a representative example.
+// `preview` is what we render on the page (redacted with xxxxx so crawlers
+// and Safe Browsing scanners don't classify this page as containing scam
+// content). `sample` is the real input sent to the backend only after a
+// user click — it triggers the server-side short-circuit (see
+// api/example-responses.ts) and never appears in the rendered DOM.
 const SCENARIO_CHIPS: Array<{
   id: string;
   icon: string;
   label: { en: string; 'zh-TW': string; vi: string };
+  preview: { en: string; 'zh-TW': string; vi: string };
   sample: string;
 }> = [
   {
     id: 'line_forward',
     icon: '💬',
     label: { en: 'LINE Forward', 'zh-TW': 'LINE 轉傳', vi: 'Chuyển tiếp LINE' },
+    preview: {
+      en: '"A friend sent this on LINE — says xxxxx order problem, need to xxxxx my info now: https://xxx.xx/xxxxxxxxx"',
+      'zh-TW': '「朋友剛在 LINE 傳這個給我，說 xxxxx 訂單異常要我立刻 xxxxx 資料：https://xxx.xx/xxxxxxxxx」',
+      vi: '"Bạn gửi qua LINE — nói đơn hàng xxxxx có vấn đề, cần xxxxx thông tin ngay: https://xxx.xx/xxxxxxxxx"',
+    },
     sample: '朋友剛在 LINE 傳這個給我，說蝦皮訂單異常要我立刻更新資料：https://bit.ly/verify-shopee-tw',
   },
   {
     id: 'facebook_ad',
     icon: '📢',
     label: { en: 'Facebook Ad', 'zh-TW': 'Facebook 廣告', vi: 'Quảng cáo Facebook' },
+    preview: {
+      en: 'https://xxx.xx/xxxxxxxxx (short link from an ad — merchant unknown)',
+      'zh-TW': 'https://xxx.xx/xxxxxxxxx（廣告短網址，商家不明）',
+      vi: 'https://xxx.xx/xxxxxxxxx (liên kết rút gọn từ quảng cáo, không rõ người bán)',
+    },
     sample: 'https://bit.ly/tw-sale-event',
   },
   {
     id: 'phishing_sms',
     icon: '📩',
     label: { en: 'Phishing SMS', 'zh-TW': '釣魚簡訊', vi: 'SMS lừa đảo' },
+    preview: {
+      en: '"Your xxxxx cannot be xxxxx — please click to xxxxx your address: https://xxx-xx-xxxxxxx.xxx/xxxxxx"',
+      'zh-TW': '「您的 xxxxx 無法 xxxxx，請點擊 xxxxx 地址：https://xxx-xx-xxxxxxx.xxx/xxxxxx」',
+      vi: '"xxxxx của bạn không thể xxxxx — xin nhấp để xxxxx địa chỉ: https://xxx-xx-xxxxxxx.xxx/xxxxxx"',
+    },
     sample: '您的包裹無法投遞，請點擊更新地址：https://post-tw-delivery.net/verify',
   },
   {
     id: 'short_link',
     icon: '🔗',
     label: { en: 'Short Link', 'zh-TW': '短網址', vi: 'Liên kết rút gọn' },
+    preview: {
+      en: 'https://xxxxx.xx/xxxxxx (destination hidden)',
+      'zh-TW': 'https://xxxxx.xx/xxxxxx（目的地不明）',
+      vi: 'https://xxxxx.xx/xxxxxx (đích đến không xác định)',
+    },
     sample: 'https://reurl.cc/4g5Yx2',
   },
 ];
@@ -459,23 +485,33 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
         </div>
       )}
 
-      {/* Scenario Chips — only when input is empty and not senior mode */}
+      {/* Scenario Chips — only when input is empty and not senior mode.
+          Each card shows a redacted preview (xxxxx) so crawlers don't index
+          the scam patterns; the real sample is sent to the backend on click. */}
       {!input.trim() && !isSeniorMode && (
         <div className="mt-6">
           <p className="text-center text-xs text-gray-500 mb-3">{t.scenarioHint}</p>
-          <div className="flex flex-wrap justify-center gap-2">
-            {SCENARIO_CHIPS.map(({ id, icon, label, sample }) => (
-              <button
-                key={id}
-                onClick={() => setInput(sample)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-800/80 hover:bg-gray-700 border border-gray-700 hover:border-crypto-accent/50 text-sm text-gray-300 hover:text-white active:scale-95 transition-all"
-                disabled={isLoading}
-                title={sample}
-              >
-                <span>{icon}</span>
-                <span>{label[language as keyof typeof label] ?? label.en}</span>
-              </button>
-            ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {SCENARIO_CHIPS.map(({ id, icon, label, preview, sample }) => {
+              const lang = language as keyof typeof label;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setInput(sample)}
+                  aria-label={label[lang] ?? label.en}
+                  className="text-left p-3 rounded-lg bg-gray-800/60 hover:bg-gray-700/80 border border-gray-700 hover:border-crypto-accent/50 active:scale-[0.98] transition-all disabled:opacity-50"
+                  disabled={isLoading}
+                >
+                  <div className="flex items-center gap-1.5 text-sm font-medium text-gray-200">
+                    <span>{icon}</span>
+                    <span>{label[lang] ?? label.en}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-400 leading-relaxed line-clamp-2">
+                    {preview[lang] ?? preview.en}
+                  </p>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
