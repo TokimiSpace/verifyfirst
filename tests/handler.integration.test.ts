@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { head as mockBlobHead, list as mockBlobList, put as mockBlobPut } from '@vercel/blob';
 
 // Mock @google/genai BEFORE importing the handler, so the handler picks up the mock.
 const mockGenerateContent = vi.fn();
@@ -10,6 +11,13 @@ vi.mock('@google/genai', () => ({
 
 // Mock @vercel/blob so tests run without network/auth.
 vi.mock('@vercel/blob', () => ({
+  BlobNotFoundError: class BlobNotFoundError extends Error {
+    constructor() {
+      super('not found');
+      this.name = 'BlobNotFoundError';
+    }
+  },
+  head: vi.fn().mockRejectedValue(Object.assign(new Error('not found'), { name: 'BlobNotFoundError' })),
   list: vi.fn().mockResolvedValue({ blobs: [] }),
   put: vi.fn().mockResolvedValue(undefined),
 }));
@@ -18,10 +26,19 @@ vi.mock('@vercel/blob', () => ({
 // Each call returns a benign "empty" response so fact-gathering produces no data.
 beforeEach(() => {
   mockGenerateContent.mockReset();
+  vi.mocked(mockBlobHead).mockClear();
+  vi.mocked(mockBlobList).mockClear();
+  vi.mocked(mockBlobPut).mockClear();
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
     new Response(JSON.stringify({}), { status: 200 })
   ));
   process.env.GEMINI_API_KEY = 'test-key';
+  process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_teststore_testsecret';
+  delete process.env.BLOB_PUBLIC_BASE_URL;
+  delete process.env.GOOGLE_SHEETS_WEBHOOK_URL;
+  delete process.env.ML_DATA_BLOB_ENABLED;
+  delete process.env.ML_DATA_SAMPLE_RATE;
+  delete process.env.RATE_LIMIT_BACKEND;
 });
 
 // Minimal res mock that captures status and JSON payload.
@@ -232,5 +249,27 @@ describe('POST /api/analyze — happy-path degradation', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.jsonBody.degradation).toMatchObject({ level: 'L0', score: 0, services: [] });
+  });
+
+  it('avoids Blob advanced operations for rate limit and ML records by default', async () => {
+    const { default: handler } = await import('../api/analyze');
+
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 80, sp: 20, v: 'test verdict', cn: 'safe', b: 'bio', d: 'name' }),
+      candidates: [{ groundingMetadata: { groundingChunks: [], webSearchQueries: [] } }],
+    });
+
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 'another plain message', inputType: 'SMS_TEXT', language: 'en' }),
+      res
+    );
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(mockBlobHead).toHaveBeenCalledTimes(1);
+    expect(mockBlobList).not.toHaveBeenCalled();
+    expect(mockBlobPut).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(mockBlobPut).mock.calls[0]?.[0]).toMatch(/^cache\//);
+    expect(vi.mocked(mockBlobPut).mock.calls.some(call => String(call[0]).startsWith('ml-data/'))).toBe(false);
   });
 });

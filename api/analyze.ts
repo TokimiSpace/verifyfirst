@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { list, put } from "@vercel/blob";
+import { BlobNotFoundError, head, list, put } from "@vercel/blob";
 import { isExampleInput, getExampleResponse } from "./example-responses.js";
 import { isKnownSafeUrl, getSafeResponse } from "./safe-domains.js";
 
@@ -9,7 +9,35 @@ import { isKnownSafeUrl, getSafeResponse } from "./safe-domains.js";
 
 interface SafeBlob { url: string; uploadedAt: string | Date }
 const inMemoryBlobs = new Map<string, { data: string; uploadedAt: Date; url: string }>();
+const inMemoryRateLimits = new Map<string, { windowStart: number; count: number }>();
 let blobDegraded = false;
+
+const boolFromEnv = (value: string | undefined, defaultValue: boolean): boolean => {
+  if (value == null) return defaultValue;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+};
+
+const numberFromEnv = (value: string | undefined, defaultValue: number): number => {
+  if (value == null) return defaultValue;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : defaultValue;
+};
+
+const getRateLimitBackend = () => (process.env.RATE_LIMIT_BACKEND || 'memory').toLowerCase();
+const isMLBlobCollectionEnabled = () => boolFromEnv(process.env.ML_DATA_BLOB_ENABLED, false);
+const getMLBlobSampleRate = () => Math.min(1, Math.max(0, numberFromEnv(process.env.ML_DATA_SAMPLE_RATE, 1)));
+
+const buildPublicBlobUrl = (path: string): string | null => {
+  const explicitBase = process.env.BLOB_PUBLIC_BASE_URL;
+  if (explicitBase) {
+    return `${explicitBase.replace(/\/$/, '')}/${path.split('/').map(encodeURIComponent).join('/')}`;
+  }
+
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const storeId = token?.split('_')[3];
+  if (!storeId) return null;
+  return `https://${storeId}.public.blob.vercel-storage.com/${path.split('/').map(encodeURIComponent).join('/')}`;
+};
 
 const safeList = async (prefix: string): Promise<{ blobs: SafeBlob[]; degraded: boolean }> => {
   try {
@@ -20,6 +48,30 @@ const safeList = async (prefix: string): Promise<{ blobs: SafeBlob[]; degraded: 
     blobDegraded = true;
     const mem = inMemoryBlobs.get(prefix);
     return { blobs: mem ? [{ url: mem.url, uploadedAt: mem.uploadedAt }] : [], degraded: true };
+  }
+};
+
+const safeHead = async (path: string): Promise<{ blob: SafeBlob | null; degraded: boolean }> => {
+  const mem = inMemoryBlobs.get(path);
+  if (mem) {
+    return { blob: { url: mem.url, uploadedAt: mem.uploadedAt }, degraded: false };
+  }
+
+  const url = buildPublicBlobUrl(path);
+  if (!url) {
+    return { blob: null, degraded: false };
+  }
+
+  try {
+    const blob = await head(url);
+    return { blob: { url: blob.url, uploadedAt: blob.uploadedAt }, degraded: false };
+  } catch (err) {
+    if (err instanceof BlobNotFoundError || (err as Error).name === 'BlobNotFoundError') {
+      return { blob: null, degraded: false };
+    }
+    console.error('[Blob] head failed:', (err as Error).message);
+    blobDegraded = true;
+    return { blob: null, degraded: true };
   }
 };
 
@@ -410,10 +462,29 @@ const safeParseJSON = async (response: Response): Promise<any | null> => {
   }
 };
 
+const checkMemoryRateLimit = (ip: string): { allowed: boolean; remaining: number } => {
+  const ipHash = hashIP(ip);
+  const now = Date.now();
+  const current = inMemoryRateLimits.get(ipHash);
+
+  if (!current || now - current.windowStart > RATE_LIMIT_WINDOW_MS) {
+    inMemoryRateLimits.set(ipHash, { windowStart: now, count: 1 });
+    return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
+  }
+
+  if (current.count >= MAX_REQUESTS_PER_WINDOW) {
+    return { allowed: false, remaining: 0 };
+  }
+
+  current.count += 1;
+  return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - current.count };
+};
+
 /**
- * Check and update rate limit for an IP
+ * Check and update rate limit for an IP using Blob.
+ * This is opt-in because every request consumes Blob advanced operations.
  */
-const checkRateLimit = async (ip: string): Promise<{ allowed: boolean; remaining: number }> => {
+const checkBlobRateLimit = async (ip: string): Promise<{ allowed: boolean; remaining: number }> => {
   const ipHash = hashIP(ip);
   const rateLimitPath = `ratelimit/${ipHash}.json`;
 
@@ -454,6 +525,16 @@ const checkRateLimit = async (ip: string): Promise<{ allowed: boolean; remaining
 };
 
 /**
+ * Check and update rate limit for an IP.
+ */
+const checkRateLimit = async (ip: string): Promise<{ allowed: boolean; remaining: number }> => {
+  if (getRateLimitBackend() === 'blob') {
+    return checkBlobRateLimit(ip);
+  }
+  return checkMemoryRateLimit(ip);
+};
+
+/**
  * Build cache file path for Vercel Blob
  */
 const buildCachePath = (cacheKey: string, language: string): string => {
@@ -465,13 +546,12 @@ const buildCachePath = (cacheKey: string, language: string): string => {
  */
 const getCachedAnalysis = async (handle: string, language: string) => {
   const cachePath = buildCachePath(handle, language);
-  const { blobs } = await safeList(cachePath);
+  const { blob } = await safeHead(cachePath);
 
-  if (blobs.length === 0) {
+  if (!blob) {
     return null;
   }
 
-  const blob = blobs[0];
   const uploadedAt = new Date(blob.uploadedAt).getTime();
   const age = Date.now() - uploadedAt;
 
@@ -2198,47 +2278,41 @@ OUTPUT JSON ONLY:
     // Save to cache (async, don't wait)
     setCachedAnalysis(cacheKey, language, fullData);
 
-    // === ML DATA COLLECTION (fire-and-forget, never blocks response) ===
-    // Skip: bot requests (bypass rate limit), force refresh (duplicate records), oversized input
-    const shouldCollectML = !isBotRequest && !forceRefresh && inputContent.length <= 10000;
-    if (!shouldCollectML) {
-      if (isBlobDegraded()) degradedServices.push('Vercel Blob');
-      return res.status(200).json({
-        ...fullData,
-        degradation: computeDegradation(degradedServices)
-      });
-    }
-
     const submissionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const submissionTs = new Date().toISOString();
+    const canCollectML = !isBotRequest && !forceRefresh && inputContent.length <= 10000;
+    const shouldWriteMLBlob = canCollectML && isMLBlobCollectionEnabled() && Math.random() < getMLBlobSampleRate();
 
-    // 1. Save full ML record to Vercel Blob (raw input + complete analysis)
-    const mlRecord = {
-      id: submissionId,
-      timestamp: submissionTs,
-      language,
-      inputType: detectedType,
-      raw: { input: inputContent, sanitized: sanitizedInput },
-      analysis: {
-        trustScore: fullData.trustScore,
-        scamProbability: fullData.scamProbability,
-        verdict: fullData.verdict,
-        identityStatus: fullData.identityStatus,
-        riskSignals: fullData.riskSignals,
-        credibilityStrengths: fullData.credibilityStrengths,
-        riskFactors: fullData.riskFactors,
-        suggestedActions: fullData.suggestedActions,
-        groundedSearch: fullData.groundedSearch,
-      },
-    };
-    const blobPath = `ml-data/${submissionTs.slice(0, 7)}/${submissionId}.json`;
-    put(blobPath, JSON.stringify(mlRecord), { access: 'public', addRandomSuffix: false })
-      .catch(() => { /* silently ignore */ });
+    // 1. Optional full ML record. Disabled by default to protect Blob's 2K
+    // Hobby advanced-operation budget; enable with ML_DATA_BLOB_ENABLED=true.
+    if (shouldWriteMLBlob) {
+      const mlRecord = {
+        id: submissionId,
+        timestamp: submissionTs,
+        language,
+        inputType: detectedType,
+        raw: { input: inputContent, sanitized: sanitizedInput },
+        analysis: {
+          trustScore: fullData.trustScore,
+          scamProbability: fullData.scamProbability,
+          verdict: fullData.verdict,
+          identityStatus: fullData.identityStatus,
+          riskSignals: fullData.riskSignals,
+          credibilityStrengths: fullData.credibilityStrengths,
+          riskFactors: fullData.riskFactors,
+          suggestedActions: fullData.suggestedActions,
+          groundedSearch: fullData.groundedSearch,
+        },
+      };
+      const blobPath = `ml-data/${submissionTs.slice(0, 7)}/${submissionId}.json`;
+      put(blobPath, JSON.stringify(mlRecord), { access: 'public', addRandomSuffix: false })
+        .catch(() => { /* silently ignore */ });
+    }
 
     // 2. Log flat summary to Google Sheets for human review & labeling
     // Google Apps Script redirects POST → must follow redirect manually (302 converts POST→GET otherwise)
     const webhookUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL;
-    if (webhookUrl && inputContent.length <= 500) {
+    if (canCollectML && webhookUrl && inputContent.length <= 500) {
       const sheetsPayload = JSON.stringify({
         id: submissionId,
         timestamp: submissionTs,

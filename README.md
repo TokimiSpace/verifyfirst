@@ -74,6 +74,10 @@ This approach allows the AI to discover information across the entire web rather
 |----------|----------|-------------|
 | `GEMINI_API_KEY` | Yes | Your Google Gemini API key |
 | `BLOB_READ_WRITE_TOKEN` | For production | Vercel Blob storage token (auto-configured on Vercel) |
+| `RATE_LIMIT_BACKEND` | No | `memory` by default to avoid Blob advanced operations; set `blob` only if you need shared Blob-backed limits |
+| `ML_DATA_BLOB_ENABLED` | No | `false` by default; set `true` to write full ML records to Blob |
+| `ML_DATA_SAMPLE_RATE` | No | `0`-`1` sampling rate for ML Blob records when enabled |
+| `BLOB_PUBLIC_BASE_URL` | No | Optional public Blob base URL override for cache reads |
 
 ## Deployment
 
