@@ -26,6 +26,7 @@ const numberFromEnv = (value: string | undefined, defaultValue: number): number 
 const getRateLimitBackend = () => (process.env.RATE_LIMIT_BACKEND || 'memory').toLowerCase();
 const isMLBlobCollectionEnabled = () => boolFromEnv(process.env.ML_DATA_BLOB_ENABLED, false);
 const getMLBlobSampleRate = () => Math.min(1, Math.max(0, numberFromEnv(process.env.ML_DATA_SAMPLE_RATE, 1)));
+const isBlobCacheEnabled = () => boolFromEnv(process.env.BLOB_CACHE_ENABLED, true);
 
 const buildPublicBlobUrl = (path: string): string | null => {
   const explicitBase = process.env.BLOB_PUBLIC_BASE_URL;
@@ -545,6 +546,7 @@ const buildCachePath = (cacheKey: string, language: string): string => {
  * Check if cached data exists and is still valid
  */
 const getCachedAnalysis = async (handle: string, language: string) => {
+  if (!isBlobCacheEnabled()) return null;
   const cachePath = buildCachePath(handle, language);
   const { blob } = await safeHead(cachePath);
 
@@ -582,6 +584,7 @@ const getCachedAnalysis = async (handle: string, language: string) => {
  * Save analysis result to Vercel Blob cache
  */
 const setCachedAnalysis = async (handle: string, language: string, data: any) => {
+  if (!isBlobCacheEnabled()) return;
   const cachePath = buildCachePath(handle, language);
   await safePut(cachePath, JSON.stringify(data));
 };
