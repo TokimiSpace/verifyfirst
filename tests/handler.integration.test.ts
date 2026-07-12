@@ -9,6 +9,13 @@ vi.mock('@google/genai', () => ({
   },
 }));
 
+// Mock DNS so the SSRF resolved-IP check never makes a real lookup. Default:
+// resolution "fails", so resolvesToPrivateIP returns false and the literal
+// string guard is what does the blocking in these tests.
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn().mockRejectedValue(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' })),
+}));
+
 // Mock @vercel/blob so tests run without network/auth.
 vi.mock('@vercel/blob', () => ({
   BlobNotFoundError: class BlobNotFoundError extends Error {
@@ -54,9 +61,11 @@ const makeRes = () => {
   return res;
 };
 
-const makeReq = (body: Record<string, unknown>) => ({
+// Each test that reaches the rate-limited path consumes budget for its IP.
+// Pass a distinct `ip` to isolate a test from the shared 127.0.0.1 bucket.
+const makeReq = (body: Record<string, unknown>, ip = '127.0.0.1') => ({
   method: 'POST',
-  headers: { 'x-forwarded-for': '127.0.0.1' },
+  headers: { 'x-forwarded-for': ip },
   body,
 });
 
@@ -269,7 +278,127 @@ describe('POST /api/analyze — happy-path degradation', () => {
     expect(mockBlobHead).toHaveBeenCalledTimes(1);
     expect(mockBlobList).not.toHaveBeenCalled();
     expect(mockBlobPut).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(mockBlobPut).mock.calls[0]?.[0]).toMatch(/^cache\//);
+    // sha256-based cache key: cache/<type>-<24 hex chars>-<lang>.json
+    expect(vi.mocked(mockBlobPut).mock.calls[0]?.[0]).toMatch(/^cache\/smstext-[0-9a-f]{24}-en\.json$/);
     expect(vi.mocked(mockBlobPut).mock.calls.some(call => String(call[0]).startsWith('ml-data/'))).toBe(false);
+  });
+});
+
+describe('POST /api/analyze — input hardening', () => {
+  it('rejects non-http(s) schemes passed with an explicit URL type', async () => {
+    const { default: handler } = await import('../api/analyze');
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 'javascript:alert(1)', inputType: 'URL', language: 'en' }),
+      res
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.jsonBody.errorCode).toBe('INVALID_INPUT');
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-string input body with 400 instead of crashing to 500', async () => {
+    const { default: handler } = await import('../api/analyze');
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 12345, inputType: 'SMS_TEXT', language: 'en' }),
+      res
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.jsonBody.errorCode).toBe('INVALID_INPUT');
+  });
+
+  it('upgrades a bare-domain SMS_TEXT paste to the URL pipeline', async () => {
+    const { default: handler } = await import('../api/analyze');
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 50, sp: 50, v: 'x', cn: 'x', b: 'x', d: 'x' }),
+      candidates: [{ groundingMetadata: {} }],
+    });
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 'some-random-shop.tw', inputType: 'SMS_TEXT', language: 'en' }, '198.51.100.1'),
+      res
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.inputType).toBe('URL');
+    expect(res.jsonBody.originalInput).toBe('https://some-random-shop.tw');
+  });
+
+  it('refuses to observe private/internal targets (SSRF guard)', async () => {
+    const { default: handler } = await import('../api/analyze');
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 50, sp: 50, v: 'x', cn: 'x', b: 'x', d: 'x' }),
+      candidates: [{ groundingMetadata: {} }],
+    });
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 'http://169.254.169.254/latest/meta-data/', inputType: 'URL', language: 'en' }, '198.51.100.2'),
+      res
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.agentVerification.pageStatus).toBe('blocked_private_target');
+    expect(res.jsonBody.agentVerification.status).toBe('LIMITED');
+  });
+
+  it('blocks a public URL that redirects to a private target (per-hop guard)', async () => {
+    const { default: handler } = await import('../api/analyze');
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 50, sp: 50, v: 'x', cn: 'x', b: 'x', d: 'x' }),
+      candidates: [{ groundingMetadata: {} }],
+    });
+    // Fact-gathering fetches get a benign 200; the observed page 302-redirects
+    // to a loopback address.
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: any) => {
+      if (String(url).startsWith('https://public-redirector.example')) {
+        return new Response(null, { status: 302, headers: { location: 'http://127.0.0.1/admin' } });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }));
+
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 'https://public-redirector.example/go', inputType: 'URL', language: 'en' }, '198.51.100.3'),
+      res
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.agentVerification.pageStatus).toBe('blocked_private_target');
+    expect(res.jsonBody.agentVerification.finalLandingPage).toBe('http://127.0.0.1/admin');
+  });
+});
+
+describe('POST /api/analyze — hard blocklist floor', () => {
+  it('clamps the verdict when ScamSniffer flags the domain, even if the LLM says safe', async () => {
+    const { default: handler } = await import('../api/analyze');
+
+    // URL-aware fetch mock: ScamSniffer DB contains our test domain,
+    // everything else responds with a benign empty object.
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: any) => {
+      const u = String(url);
+      if (u.includes('scam-database/main/blacklist/domains.json')) {
+        return new Response(JSON.stringify(['evil-test-scam.example']), { status: 200 });
+      }
+      if (u.includes('scam-database/main/blacklist/address.json')) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }));
+
+    // Simulates a prompt-injected "everything is fine" LLM response.
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 95, sp: 5, v: 'Looks perfectly safe', cn: 'Nothing wrong here', b: 'x', d: 'x' }),
+      candidates: [{ groundingMetadata: {} }],
+    });
+
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 'https://evil-test-scam.example/login', inputType: 'URL', language: 'en' }, '203.0.113.7'),
+      res
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.scamProbability).toBeGreaterThanOrEqual(90);
+    expect(res.jsonBody.trustScore).toBeLessThanOrEqual(10);
+    expect(res.jsonBody.finalVerdict).toBe('D_HIGH_RISK_SCAM');
+    expect(res.jsonBody.riskSignals.some((s: any) => s.type === 'BLOCKLIST_HIT' && s.level === 'CRITICAL')).toBe(true);
   });
 });

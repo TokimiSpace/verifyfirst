@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyError, computeDegradation } from '../api/analyze';
+import { classifyError, computeDegradation, isPrivateHostname, isBareDomain, maskPII } from '../api/analyze';
 
 describe('classifyError', () => {
   it('classifies Gemini error.status=429 as LLM_QUOTA/503', () => {
@@ -117,5 +117,88 @@ describe('computeDegradation', () => {
     const d = computeDegradation(['SomeNewService']);
     expect(d.score).toBe(1);
     expect(d.level).toBe('L1');
+  });
+});
+
+describe('isPrivateHostname (SSRF guard)', () => {
+  it.each([
+    'localhost',
+    '127.0.0.1',
+    '10.0.0.5',
+    '172.16.0.1',
+    '172.31.255.255',
+    '192.168.1.1',
+    '169.254.169.254',
+    '100.64.1.1',
+    '0.0.0.0',
+    '[::1]',
+    '[fc00::1]',
+    '[fe80::1]',
+    '2130706433',
+    '0x7f000001',
+    '0177.0.0.1',
+    'metadata.google.internal',
+    'router.local',
+    'nas.lan',
+  ])('blocks %s', (host) => {
+    expect(isPrivateHostname(host)).toBe(true);
+  });
+
+  it.each([
+    'example.com',
+    'verify1st.tw',
+    '8.8.8.8',
+    '172.15.0.1',
+    '172.32.0.1',
+    '104.16.0.1',
+    'sub.domain.co.uk',
+  ])('allows %s', (host) => {
+    expect(isPrivateHostname(host)).toBe(false);
+  });
+});
+
+describe('isBareDomain', () => {
+  it.each([
+    'verify1st.tw',
+    'scam-site.example.com',
+    'a-b.tw',
+    '  spaced.tw  ',
+    'post-tw-delivery.net',
+  ])('accepts %s', (input) => {
+    expect(isBareDomain(input)).toBe(true);
+  });
+
+  it.each([
+    'hello',
+    '3.14',
+    '192.168.1.1',
+    'user@example.tw',
+    'this is a sentence.tw',
+    '-bad.tw',
+    'bad-.tw',
+    'https://already-a-url.tw',
+    'john.doe',          // dotted handle, unknown TLD
+    'crypto.trader',
+    '',
+  ])('rejects %s', (input) => {
+    expect(isBareDomain(input)).toBe(false);
+  });
+});
+
+describe('maskPII', () => {
+  it('masks Taiwan mobile numbers', () => {
+    expect(maskPII('打 0912345678 給我')).toBe('打 0912-***-*** 給我');
+  });
+
+  it('masks a LINE ID but keeps the first two chars', () => {
+    expect(maskPII('加官方 LINE：scammer123')).toBe('加官方 LINE：sc***');
+    expect(maskPII('LINE ID: happy_go')).toBe('LINE ID: ha***');
+  });
+
+  it('does NOT corrupt ordinary words ending in "line"', () => {
+    // Regression: the LINE-ID regex used to fire inside deadline/headline/online.
+    for (const s of ['Deadline: 2026-08-01', 'Headline: BREAKING today', 'Available online: yes']) {
+      expect(maskPII(s)).toBe(s);
+    }
   });
 });

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, Loader2, Link, MessageSquare, ImagePlus, FileText, X, ScanText, AtSign, Phone } from 'lucide-react';
 import { Language, InputType } from '../types';
-import { createWorker } from 'tesseract.js';
 
 type InputMode = 'URL' | 'SMS_TEXT' | 'PHONE' | 'HANDLE';
 
@@ -149,9 +148,26 @@ const SCENARIO_CHIPS: Array<{
   },
 ];
 
+// Mirrors the server's bare-domain check (api/analyze.ts isBareDomain) so the
+// input badge matches how the backend will actually classify the paste. Keep
+// BARE_DOMAIN_RE and KNOWN_TLDS in sync with that file.
+const BARE_DOMAIN_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.([a-z]{2,})$/i;
+const KNOWN_TLDS = new Set([
+  'com', 'net', 'org', 'io', 'co', 'cc', 'xyz', 'top', 'vip', 'app', 'site',
+  'online', 'shop', 'store', 'info', 'biz', 'live', 'me', 'tv', 'ai', 'link',
+  'click', 'dev', 'pro', 'asia', 'work', 'fun', 'icu', 'gov', 'edu',
+  'tw', 'cn', 'hk', 'mo', 'jp', 'kr', 'us', 'uk', 'in', 'ph', 'vn', 'th',
+  'sg', 'my', 'id', 'au', 'de', 'fr', 'ru', 'br',
+]);
+
+const isBareDomain = (value: string): boolean => {
+  const m = value.match(BARE_DOMAIN_RE);
+  return m ? KNOWN_TLDS.has(m[4].toLowerCase()) : false;
+};
+
 const detectInputType = (value: string): InputMode => {
   const trimmed = value.trim();
-  if (/^(https?:\/\/|www\.)/i.test(trimmed)) return 'URL';
+  if (/^(https?:\/\/|www\.)/i.test(trimmed) || isBareDomain(trimmed)) return 'URL';
   if (/^\+?\d[\d\s\-()]{7,}$/.test(trimmed)) return 'PHONE';
   if (/^@?[a-zA-Z0-9._]{2,50}$/.test(trimmed)) return 'HANDLE';
   return 'SMS_TEXT';
@@ -227,6 +243,9 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
 
         try {
           const langs = language === 'vi' ? 'vie+eng' : 'chi_tra+eng';
+          // Dynamic import keeps tesseract.js out of the initial bundle —
+          // it's only needed when someone actually uses screenshot OCR.
+          const { createWorker } = await import('tesseract.js');
           const worker = await createWorker(langs);
           const { data } = await worker.recognize(dataUrl);
           await worker.terminate();

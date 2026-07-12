@@ -370,9 +370,11 @@ const App: React.FC = () => {
     setLoadingState('SEARCHING');
     setLoadingMessageIndex(0);
 
-    // Artificial delay to show "searching" phase if API is too fast
+    // Advance to "analyzing" after a short beat. Functional update — reading
+    // `loadingState` here would see the stale value captured at render time,
+    // and the step indicator would never leave step 1.
     setTimeout(() => {
-        if (loadingState === 'SEARCHING') setLoadingState('ANALYZING');
+        setLoadingState(prev => (prev === 'SEARCHING' ? 'ANALYZING' : prev));
     }, 1500);
 
     try {

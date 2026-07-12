@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { GoogleGenAI } from "@google/genai";
 import { BlobNotFoundError, head, list, put } from "@vercel/blob";
 import { isExampleInput, getExampleResponse } from "./example-responses.js";
@@ -12,13 +13,15 @@ const inMemoryBlobs = new Map<string, { data: string; uploadedAt: Date; url: str
 const inMemoryRateLimits = new Map<string, { windowStart: number; count: number }>();
 let blobDegraded = false;
 
+// An empty-string env var (set but blank) means "unset" — without the trim
+// check, `BLOB_CACHE_ENABLED=` would read as false and `Number('')` as 0.
 const boolFromEnv = (value: string | undefined, defaultValue: boolean): boolean => {
-  if (value == null) return defaultValue;
+  if (value == null || value.trim() === '') return defaultValue;
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 };
 
 const numberFromEnv = (value: string | undefined, defaultValue: number): number => {
-  if (value == null) return defaultValue;
+  if (value == null || value.trim() === '') return defaultValue;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : defaultValue;
 };
@@ -113,13 +116,17 @@ const resetBlobHealth = () => { blobDegraded = false; };
 /**
  * Mask phone numbers and LINE IDs to protect PII before caching.
  */
-const maskPII = (text: string): string => {
+export const maskPII = (text: string): string => {
   if (!text) return text;
   let t = text;
   // Taiwan mobile: 09xxxxxxxx → 09xx-***-***
   t = t.replace(/0[9]\d{8}/g, m => m.slice(0, 4) + '-***-***');
   // International +886: +886-9xx-xxx-xxx
   t = t.replace(/\+886[-\s]?9\d{2}[-\s]?\d{3}[-\s]?\d{3}/g, '+886-9xx-***-***');
+  // LINE IDs: "LINE ID: abc123" / "LINE：abc123" → keep first 2 chars.
+  // \b before "line" so it doesn't fire inside deadline/headline/online/etc.
+  t = t.replace(/(\b(?:line\s*id|line)\s*[:：]\s*)([a-z0-9._-]{3,})/gi,
+    (_, prefix, id) => prefix + id.slice(0, 2) + '***');
   return t;
 };
 
@@ -232,14 +239,34 @@ const IDENTITY_MAP: Record<number, string> = { 0: "UNKNOWN_ENTITY", 1: "VERIFIED
 const RISK_LEVEL_MAP: Record<number, string> = { 0: "CRITICAL", 1: "WARNING", 2: "INFO" };
 const ACTION_TYPE_MAP: Record<number, string> = { 0: "CALL_165", 1: "BLOCK", 2: "OFFICIAL_CHANNEL", 3: "REPORT", 4: "VERIFY", 5: "IGNORE" };
 
+// Bare domain paste like "verify1st.tw" or "scam-site.example.com": a single
+// hostname-shaped token. Deliberately no lookbehind — this regex is mirrored
+// client-side (components/SearchInput.tsx) where older Safari must parse it.
+const BARE_DOMAIN_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.([a-z]{2,})$/i;
+
+// TLD allowlist so dotted handles ("john.doe", "crypto.trader") aren't misread
+// as domains. Keep in sync with the mirror in components/SearchInput.tsx.
+const KNOWN_TLDS = new Set([
+  'com', 'net', 'org', 'io', 'co', 'cc', 'xyz', 'top', 'vip', 'app', 'site',
+  'online', 'shop', 'store', 'info', 'biz', 'live', 'me', 'tv', 'ai', 'link',
+  'click', 'dev', 'pro', 'asia', 'work', 'fun', 'icu', 'gov', 'edu',
+  'tw', 'cn', 'hk', 'mo', 'jp', 'kr', 'us', 'uk', 'in', 'ph', 'vn', 'th',
+  'sg', 'my', 'id', 'au', 'de', 'fr', 'ru', 'br',
+]);
+
+export const isBareDomain = (input: string): boolean => {
+  const m = input.trim().match(BARE_DOMAIN_RE);
+  return m ? KNOWN_TLDS.has(m[4].toLowerCase()) : false;
+};
+
 /**
  * Detect input type from content
  */
 const detectInputType = (input: string): 'URL' | 'SMS_TEXT' | 'PHONE' => {
   const trimmed = input.trim();
 
-  // Check if it's a URL
-  if (/^https?:\/\//i.test(trimmed) || /^www\./i.test(trimmed)) {
+  // Check if it's a URL (explicit protocol, www., or a bare domain paste)
+  if (/^https?:\/\//i.test(trimmed) || /^www\./i.test(trimmed) || isBareDomain(trimmed)) {
     return 'URL';
   }
 
@@ -261,16 +288,21 @@ const sanitizeInput = (input: string, inputType: 'URL' | 'SMS_TEXT' | 'PHONE'): 
   const trimmed = input.trim();
 
   switch (inputType) {
-    case 'URL':
+    case 'URL': {
       // Basic URL validation
       if (trimmed.length > MAX_INPUT_LENGTH) return null;
       try {
-        const urlStr = trimmed.startsWith('www.') ? `https://${trimmed}` : trimmed;
-        new URL(urlStr);
+        const needsPrefix = trimmed.startsWith('www.') || isBareDomain(trimmed);
+        const urlStr = needsPrefix ? `https://${trimmed}` : trimmed;
+        const parsed = new URL(urlStr);
+        // Only web URLs — rejects javascript:, file:, ftp: etc. This string is
+        // fetched server-side (observeUrl) and rendered as an <a href> upstream.
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
         return urlStr;
       } catch {
         return null;
       }
+    }
 
     case 'SMS_TEXT':
       // Validate text length and sanitize
@@ -296,24 +328,15 @@ const sanitizeInput = (input: string, inputType: 'URL' | 'SMS_TEXT' | 'PHONE'): 
 };
 
 /**
- * Generate cache key for different input types
+ * Generate cache key for different input types.
+ *
+ * SHA-256 (truncated to 96 bits) — the previous 32-bit rolling hash could
+ * collide and serve one input's cached verdict for a different input, and
+ * phone keys embedded the raw number (PII) in a public blob path.
  */
 const generateCacheKey = (input: string, inputType: string): string => {
-  // Create a short hash for URLs and SMS text
-  if (inputType === 'URL' || inputType === 'SMS_TEXT') {
-    let hash = 0;
-    for (let i = 0; i < input.length; i++) {
-      const char = input.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return `${inputType.toLowerCase()}-${Math.abs(hash).toString(36)}`;
-  }
-  // For phone numbers, use the normalized E.164 number as key
-  if (inputType === 'PHONE') {
-    return `phone-${input.replace(/\+/g, '')}`;
-  }
-  return input;
+  const digest = createHash('sha256').update(`${inputType}:${input}`).digest('hex').slice(0, 24);
+  return `${inputType.toLowerCase().replace(/[^a-z]/g, '')}-${digest}`;
 };
 
 const logToGoogleSheets = async (webhookUrl: string, payload: string) => {
@@ -763,6 +786,89 @@ async function fetchPage(url: string): Promise<Response> {
   }
 }
 
+// SSRF guard for user-controlled URLs (observeUrl fetches them server-side,
+// including every redirect hop). Blocks loopback/private/link-local/reserved
+// hosts and non-numeric tricks (bare integers, hex, leading-zero octets).
+// DNS rebinding is out of scope — Vercel egress has no internal network.
+export function isPrivateHostname(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/\.+$/, '');
+  if (h === 'localhost' || h === 'localhost.localdomain') return true;
+  if (/\.(local|localdomain|internal|lan|home\.arpa)$/.test(h)) return true;
+  // Bare-integer / hex IPv4 forms (http://2130706433, http://0x7f000001)
+  if (/^\d+$/.test(h) || /^0x[0-9a-f]+$/.test(h)) return true;
+  // All-numeric dotted hostnames are IP notations, never DNS names (numeric
+  // TLDs don't exist). Anything that isn't a clean dotted quad — octal-ish
+  // leading zeros, 4+ digit octets, 5 segments — is an evasion attempt.
+  if (/^[\d.]+$/.test(h)) {
+    const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!v4) return true;
+    if (v4.slice(1).some(o => /^0\d/.test(o))) return true;
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return (
+      a === 0 || a === 10 || a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a >= 224
+    );
+  }
+  if (h.startsWith('[')) {
+    const v6 = h.slice(1, -1);
+    return v6 === '::' || v6 === '::1' || /^(fc|fd|fe[89ab])/i.test(v6) || v6.startsWith('::ffff:');
+  }
+  return false;
+}
+
+function isBlockedTarget(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+    return isPrivateHostname(parsed.hostname);
+  } catch {
+    return true;
+  }
+}
+
+// Second SSRF layer: resolve the hostname and reject if ANY answer is a
+// private/link-local/reserved IP. Catches public names that deliberately map
+// to internal space (e.g. *.nip.io, an attacker's own A record → 169.254.x).
+// DNS rebinding between this check and the fetch is still out of scope.
+async function resolvesToPrivateIP(hostname: string): Promise<boolean> {
+  try {
+    const { lookup } = await import('node:dns/promises');
+    const answers = await lookup(hostname, { all: true });
+    return answers.some(({ address, family }) =>
+      isPrivateHostname(family === 6 ? `[${address}]` : address));
+  } catch {
+    // Resolution failure isn't a private-IP signal — let the fetch fail on its
+    // own so the page status reflects the real network error.
+    return false;
+  }
+}
+
+/**
+ * Read a response body up to maxChars without buffering the whole payload —
+ * scam pages are untrusted and could be arbitrarily large.
+ */
+async function readBodyCapped(res: Response, maxChars: number): Promise<string> {
+  const body = res.body;
+  if (!body) return (await res.text()).slice(0, maxChars);
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let out = '';
+  try {
+    while (out.length < maxChars) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      out += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    try { await reader.cancel(); } catch { /* already closed */ }
+  }
+  return out.slice(0, maxChars);
+}
+
 /** Resolve a Location header value against a base URL */
 function resolveRedirect(location: string, base: string): string | null {
   try {
@@ -1058,7 +1164,10 @@ function formatVTResult(vt: VTResult): string {
 }
 
 // --- Gather all URL facts and format as prompt section ---
-async function buildURLFactsSection(url: string, degradedOut?: string[]): Promise<string> {
+// hardSignalsOut collects confirmed blocklist hits (Safe Browsing / ScamSniffer /
+// VirusTotal). The handler enforces a scam-probability floor in code for these —
+// prompt-only rules can be talked out of by injected page content.
+async function buildURLFactsSection(url: string, degradedOut?: string[], hardSignalsOut?: string[]): Promise<string> {
   let hostname: string;
   try { hostname = new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
 
@@ -1090,6 +1199,7 @@ async function buildURLFactsSection(url: string, degradedOut?: string[]): Promis
     const s = sb.value;
     if (s.status === 'THREAT') {
       lines.push(`Google Safe Browsing: 🚨 THREAT DETECTED — ${s.threats?.join(', ')}`);
+      hardSignalsOut?.push(`Google Safe Browsing flagged this URL (${s.threats?.join(', ')})`);
     } else if (s.status === 'CLEAN') {
       lines.push('Google Safe Browsing: ✅ CLEAN (not on any blocklist)');
     }
@@ -1107,6 +1217,7 @@ async function buildURLFactsSection(url: string, degradedOut?: string[]): Promis
   if (ss.status === 'fulfilled' && ss.value.status !== 'SKIP') {
     if (ss.value.status === 'BLOCKED') {
       lines.push('ScamSniffer: 🚨 BLOCKED — confirmed crypto/Web3 phishing domain');
+      hardSignalsOut?.push('ScamSniffer blocklist: confirmed crypto/Web3 phishing domain');
     } else {
       lines.push('ScamSniffer: ✅ Not on crypto phishing blacklist');
     }
@@ -1116,6 +1227,9 @@ async function buildURLFactsSection(url: string, degradedOut?: string[]): Promis
     lines.push(formatVTResult(vt.value));
     if (vt.value.categories.length > 0) {
       lines.push(`VirusTotal Categories: ${vt.value.categories.join(', ')}`);
+    }
+    if (vt.value.malicious >= 5) {
+      hardSignalsOut?.push(`VirusTotal: ${vt.value.malicious} engines flag this domain as malicious`);
     }
   }
 
@@ -1167,7 +1281,7 @@ function buildPhoneFactsSection(e164: string): string {
 }
 
 // --- SMS: extract embedded URLs/wallets/phones and check them ---
-async function buildSMSFactsSection(text: string, degradedOut?: string[]): Promise<string> {
+async function buildSMSFactsSection(text: string, degradedOut?: string[], hardSignalsOut?: string[]): Promise<string> {
   const urlMatches = [...text.matchAll(/https?:\/\/[^\s<>"{}|\\^`[\]]+/gi)].map(m => m[0]);
   const uniqueURLs = [...new Set(urlMatches)].slice(0, 3);
   const phoneMatches = [...text.matchAll(/(?:\+886|886|0)[89]\d{8}|\+\d{8,14}/g)].map(m => m[0]);
@@ -1198,12 +1312,21 @@ async function buildSMSFactsSection(text: string, degradedOut?: string[]): Promi
     }
     if (sb.status === 'fulfilled' && sb.value.status !== 'SKIP') {
       lines.push(`  Safe Browsing: ${sb.value.status === 'THREAT' ? '🚨 THREAT — ' + sb.value.threats?.join(', ') : '✅ CLEAN'}`);
+      if (sb.value.status === 'THREAT') {
+        hardSignalsOut?.push(`Google Safe Browsing flagged embedded URL ${url}`);
+      }
     }
     if (ss.status === 'fulfilled' && ss.value.status !== 'SKIP') {
       lines.push(`  ScamSniffer: ${ss.value.status === 'BLOCKED' ? '🚨 BLOCKED — confirmed crypto phishing domain' : '✅ Not on crypto phishing blacklist'}`);
+      if (ss.value.status === 'BLOCKED') {
+        hardSignalsOut?.push(`ScamSniffer blocklist: embedded URL ${url} is a confirmed phishing domain`);
+      }
     }
     if (vt.status === 'fulfilled' && vt.value) {
       lines.push(`  ${formatVTResult(vt.value)}`);
+      if (vt.value.malicious >= 5) {
+        hardSignalsOut?.push(`VirusTotal: embedded URL ${url} flagged malicious by ${vt.value.malicious} engines`);
+      }
     }
   }
 
@@ -1212,6 +1335,9 @@ async function buildSMSFactsSection(text: string, degradedOut?: string[]): Promi
     lines.push(`\nWallet Address: ${wallet}`);
     if (result.status !== 'SKIP') {
       lines.push(`  ScamSniffer: ${result.status === 'BLOCKED' ? '🚨 BLOCKED — confirmed scam wallet address' : '✅ Not on scam wallet blacklist'}`);
+      if (result.status === 'BLOCKED') {
+        hardSignalsOut?.push(`ScamSniffer blocklist: wallet ${wallet} is a confirmed scam address`);
+      }
     }
   }
 
@@ -1272,30 +1398,50 @@ async function observeUrl(targetUrl: string): Promise<any> {
   const chain: string[] = [];
   let current = targetUrl;
   const MAX_HOPS = 8; // more hops to handle multi-step redirect chains
+  // Overall budget across all hops — a slow redirect chain must not eat the
+  // whole serverless invocation. Checked between hops (not mid-fetch), so
+  // worst case is deadline + one final per-hop timeout, well under 60s.
+  const deadline = Date.now() + 15000;
+
+  const earlyExit = (status: string) => ({
+    redirectChain: chain,
+    finalLandingPage: current,
+    httpStatus: null,
+    pageStatus: status,
+    forms: [],
+    ctaButtons: [],
+    asksForLogin: false,
+    asksForOtp: false,
+    asksForPayment: false,
+    asksForAppDownload: false,
+    asksToAddChat: false,
+  });
 
   for (let i = 0; i < MAX_HOPS; i++) {
     if (chain.includes(current)) break; // loop detection
+
+    // Refuse non-web schemes and private/internal hosts — applies to the
+    // initial URL and to every redirect target a scam page sends us to.
+    // Two layers: literal-string patterns, then resolved-IP check.
+    if (isBlockedTarget(current)) {
+      return earlyExit('blocked_private_target');
+    }
+    if (await resolvesToPrivateIP(new URL(current).hostname)) {
+      return earlyExit('blocked_private_target');
+    }
+
     chain.push(current);
+
+    if (Date.now() > deadline) {
+      return earlyExit('timeout');
+    }
 
     let res: Response;
     try {
       res = await fetchPage(current);
     } catch (err: any) {
       // Network error or timeout — record and stop
-      const reason = err?.name === 'AbortError' ? 'timeout' : 'network_error';
-      return {
-        redirectChain: chain,
-        finalLandingPage: current,
-        httpStatus: null,
-        pageStatus: reason,
-        forms: [],
-        ctaButtons: [],
-        asksForLogin: false,
-        asksForOtp: false,
-        asksForPayment: false,
-        asksForAppDownload: false,
-        asksToAddChat: false,
-      };
+      return earlyExit(err?.name === 'AbortError' ? 'timeout' : 'network_error');
     }
 
     const status = res.status;
@@ -1310,8 +1456,8 @@ async function observeUrl(targetUrl: string): Promise<any> {
       continue;
     }
 
-    // Read body (cap at 200KB to avoid memory issues)
-    const html = (await res.text()).slice(0, 200000);
+    // Read body (cap at 200KB without buffering larger payloads)
+    const html = await readBodyCapped(res, 200000);
 
     // Detect bot challenge pages — record but don't parse as real content
     if (isBotChallenge(html, status)) {
@@ -1434,19 +1580,7 @@ async function observeUrl(targetUrl: string): Promise<any> {
   }
 
   // Exceeded max hops without landing on a final page
-  return {
-    redirectChain: chain,
-    finalLandingPage: current,
-    httpStatus: null,
-    pageStatus: 'redirect_loop_or_too_many_hops',
-    forms: [],
-    ctaButtons: [],
-    asksForLogin: false,
-    asksForOtp: false,
-    asksForPayment: false,
-    asksForAppDownload: false,
-    asksToAddChat: false,
-  };
+  return earlyExit('redirect_loop_or_too_many_hops');
 }
 
 async function buildAgentVerification(normalizedInput: any, inputType: string): Promise<any> {
@@ -1479,6 +1613,7 @@ async function buildAgentVerification(normalizedInput: any, inputType: string): 
       timeout:                      { label: '頁面狀態', value: '連線逾時', lane: 'UNVERIFIED' },
       network_error:                { label: '頁面狀態', value: '無法連線', lane: 'UNVERIFIED' },
       redirect_loop_or_too_many_hops: { label: '頁面狀態', value: '重定向過多或迴圈', lane: 'OBSERVED' },
+      blocked_private_target:       { label: '頁面狀態', value: '指向內部/保留位址，已拒絕存取', lane: 'OBSERVED' },
     };
 
     const riskObservations = [
@@ -1727,10 +1862,25 @@ export default async function handler(req: any, res: any) {
       });
     }
 
+    if (typeof inputContent !== 'string') {
+      return res.status(400).json({
+        errorCode: 'INVALID_INPUT',
+        error: 'Input must be a string.'
+      });
+    }
+
     // Detect input type if not provided
-    const detectedType = rawInputType && ALLOWED_INPUT_TYPES.includes(rawInputType)
+    let detectedType = rawInputType && ALLOWED_INPUT_TYPES.includes(rawInputType)
       ? rawInputType
       : detectInputType(inputContent);
+
+    // A bare domain pasted without protocol ("scam-site.tw") reaches us as
+    // SMS_TEXT from older clients — upgrade it to URL so it gets the full
+    // pre-check pipeline (RDAP age, Safe Browsing, ScamSniffer, VirusTotal,
+    // agent page observation) instead of a text-only analysis.
+    if (detectedType === 'SMS_TEXT' && isBareDomain(inputContent)) {
+      detectedType = 'URL';
+    }
 
     // Sanitize input based on type
     const sanitizedInput = sanitizeInput(inputContent, detectedType);
@@ -1856,11 +2006,14 @@ export default async function handler(req: any, res: any) {
     const normalizedInput = normalizeInput(sanitizedInput, detectedType);
 
     // === GATHER OBJECTIVE FACTS (parallel, before AI call) ===
+    // Confirmed blocklist hits land here; they clamp the final verdict in code
+    // further down, independent of what the LLM decides.
+    const hardSignals: string[] = [];
     let factsSection = '';
     const factsPromise = (async () => {
-      if (detectedType === 'URL') return buildURLFactsSection(sanitizedInput, degradedServices);
+      if (detectedType === 'URL') return buildURLFactsSection(sanitizedInput, degradedServices, hardSignals);
       if (detectedType === 'PHONE') return buildPhoneFactsSection(sanitizedInput);
-      if (detectedType === 'SMS_TEXT') return buildSMSFactsSection(sanitizedInput, degradedServices);
+      if (detectedType === 'SMS_TEXT') return buildSMSFactsSection(sanitizedInput, degradedServices, hardSignals);
       return '';
     })();
 
@@ -2085,11 +2238,16 @@ OUTPUT JSON ONLY:
 
     const prompt = buildPrompt();
 
+    // GEMINI_THINKING_BUDGET: unset keeps the model's default (dynamic
+    // thinking); 0 disables thinking — substantially cheaper/faster on
+    // 2.5-flash at some cost in analysis depth.
+    const thinkingBudget = numberFromEnv(process.env.GEMINI_THINKING_BUDGET, -1);
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
+        ...(thinkingBudget >= 0 ? { thinkingConfig: { thinkingBudget } } : {}),
       },
     });
 
@@ -2270,6 +2428,38 @@ OUTPUT JSON ONLY:
       ];
     }
 
+    // === HARD BLOCKLIST FLOOR (enforced in code, not just prompt) ===
+    // Page content the LLM reads is attacker-controlled and can inject
+    // instructions; the prompt's "MUST be ≥ 90" scoring rules are advisory.
+    // Confirmed Safe Browsing / ScamSniffer / VirusTotal hits override
+    // whatever the model (or the low-evidence fallback above) decided.
+    if (hardSignals.length > 0) {
+      fullData.scamProbability = Math.max(fullData.scamProbability, 90);
+      fullData.trustScore = Math.min(fullData.trustScore, 10);
+      // Also clamp identityStatus — deriveOfficialRoute trusts
+      // OFFICIAL_PROJECT via an OR, so a prompt-injected s=3 would otherwise
+      // still mint an OFFICIAL_CONFIRMED route pointing at the malicious URL.
+      fullData.identityStatus = 'IMPERSONATOR';
+      fullData.finalVerdict = deriveFinalVerdict(fullData.scamProbability);
+      for (const evidence of hardSignals) {
+        if (!fullData.riskSignals.some((s: any) => s.evidence === evidence)) {
+          fullData.riskSignals.push({ type: 'BLOCKLIST_HIT', evidence, level: 'CRITICAL' });
+        }
+      }
+      fullData.riskFactors = fullData.riskFactors.length > 0 ? fullData.riskFactors : [...hardSignals];
+      fullData.suggestedActions = generateActions(fullData.scamProbability, fullData.riskSignals, language);
+      fullData.seniorModeVerdict = generateSeniorVerdict(fullData.scamProbability, language);
+      fullData.officialRoute = deriveOfficialRoute(normalizedInput, fullData.identityStatus, fullData.trustScore, agentVerification, language);
+      fullData.primaryActions = buildPrimaryActions(fullData.officialRoute, language);
+      fullData.likelyLosses = buildLikelyLosses(fullData.scamProbability, fullData.riskSignals, agentVerification, language);
+      fullData.trustSummary = buildTrustSummary(agentVerification, fullData.officialRoute, fullData.riskSignals);
+      fullData.conclusion = language === 'zh-TW'
+        ? '這個內容已被國際防詐資料庫確認為惡意來源，請立即停止操作，不要輸入任何資料或匯款。'
+        : language === 'vi'
+        ? 'Nội dung này đã bị các cơ sở dữ liệu chống lừa đảo quốc tế xác nhận là độc hại. Dừng ngay, không nhập thông tin hay chuyển tiền.'
+        : 'This content is confirmed malicious by international anti-fraud blocklists. Stop now — do not enter any information or send money.';
+    }
+
     // Apply PII masking before caching and returning (PDF security requirement)
     if (detectedType === 'SMS_TEXT') {
       fullData.bioSummary = maskPII(fullData.bioSummary);
@@ -2278,8 +2468,10 @@ OUTPUT JSON ONLY:
       fullData.riskSignals = fullData.riskSignals.map((s: any) => ({ ...s, evidence: maskPII(s.evidence) }));
     }
 
-    // Save to cache (async, don't wait)
-    setCachedAnalysis(cacheKey, language, fullData);
+    // Save to cache before responding. Fire-and-forget writes get killed when
+    // the invocation freezes after res.json() — every lost write is a future
+    // Gemini call we pay for again. safePut never throws.
+    await setCachedAnalysis(cacheKey, language, fullData);
 
     const submissionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const submissionTs = new Date().toISOString();
