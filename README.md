@@ -1,83 +1,102 @@
-# CryptoTruth
+# VerifyFirst AI (verify1st.tw)
 
-AI-powered due diligence platform for analyzing cryptocurrency Key Opinion Leaders (KOLs) and Twitter influencers.
+First-step scam verification engine for Taiwan. Paste a suspicious message,
+link, or phone number — VerifyFirst safely walks the content for you (redirect
+chains, page observation, blocklists, community fact-checks), then explains in
+plain language what it is, what it asks you to do, and what the safest next
+step is. Built for everyday users, with a dedicated large-text Senior Mode.
+
+Live at **[verify1st.tw](https://verify1st.tw)**.
 
 ## Features
 
-- **Trust Score Analysis** - AI-driven reputation scoring (0-100) based on track record
-- **Google Search Grounding** - Real-time fact-checking using Gemini 2.0 Flash's built-in search
-- **Track Record Verification** - Identify successful predictions vs. failed calls
-- **Controversy Detection** - Surface rug pulls, scams, and paid promotions via web search
-- **Evidence Sources** - Provides links to sources backing up claims (ZachXBT, Coffeezilla, Reddit, etc.)
-- **Event Timeline** - Visual timeline of significant events
-- **Multi-language Support** - English and Traditional Chinese (zh-TW)
-- **Caching** - 24-hour caching for performance optimization
-- **Rate Limiting** - Built-in protection (10 requests/hour per IP)
+- **Multi-input analysis** — scam SMS text, suspicious URLs (including bare
+  domains), phone numbers, screenshots (client-side OCR), and `.txt` files
+- **Objective pre-checks before AI** — RDAP domain age, Google Safe Browsing,
+  ScamSniffer crypto-phishing blocklist, VirusTotal, DNS resolution
+- **Agent sandbox** — server-side page observation: follows redirect chains
+  (HTTP + meta-refresh/JS), detects login/OTP/payment/APK-download asks
+- **Hard blocklist floors** — confirmed Safe Browsing/ScamSniffer/VirusTotal
+  hits clamp the verdict in code; the LLM cannot be talked out of them
+- **Cofacts integration** — crowd-sourced Taiwanese fact-check reports
+- **Google Search grounding** — Gemini researches reputation in real time
+- **Graceful degradation** — L0–L5 severity levels when upstream services fail
+- **165 reporting** — pre-filled report modal for Taiwan's anti-fraud hotline
+- **Multi-language** — Traditional Chinese, English, Vietnamese
+- **Senior Mode** — larger text, simplified results
 
 ## Tech Stack
 
 - **Frontend**: React 19, TypeScript, Tailwind CSS, Vite
-- **AI**: Google Gemini 2.0 Flash with Google Search grounding
+- **AI**: Google Gemini 2.5 Flash with Google Search grounding
 - **Backend**: Vercel Serverless Functions
-- **Caching**: Vercel Blob Storage
-- **i18n**: Built-in language support (English, Traditional Chinese)
+- **Caching**: Vercel Blob Storage (72h analysis cache)
+- **OCR**: tesseract.js (lazy-loaded, in-browser)
 
-## How It Works
+## How an Analysis Works
 
-CryptoTruth uses Gemini 2.0 Flash's Google Search grounding capability to perform real-time fact-checking. When you search for a KOL, the AI:
-
-1. Searches for investigations by crypto detectives like ZachXBT
-2. Looks for coverage by investigators like Coffeezilla
-3. Finds community discussions on Reddit r/CryptoCurrency
-4. Identifies scam allegations, rug pulls, and fraud reports
-5. Detects patterns of undisclosed paid promotions
-
-This approach allows the AI to discover information across the entire web rather than being limited to a single data source.
+1. Input is classified (URL / SMS text / phone) and sanitized
+2. Known example chips and allowlisted domains short-circuit with canned
+   responses (zero upstream quota)
+3. Objective facts are gathered in parallel: RDAP, Safe Browsing, ScamSniffer,
+   VirusTotal, DNS, Cofacts, plus live page observation for URLs
+4. Gemini analyzes with search grounding, receiving the facts as ground truth
+5. Code-level post-processing: blocklist verdict floors, low-evidence
+   normalization, PII masking, then the result is cached for 72 hours
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 18+
-- npm or yarn
-- Google Gemini API key ([Get one here](https://aistudio.google.com/app/apikey))
+- Google Gemini API key ([get one here](https://aistudio.google.com/app/apikey))
 
 ### Installation
 
-1. Clone the repository:
+1. Clone and install:
    ```bash
-   git clone https://github.com/yourusername/verify1st.git
+   git clone https://github.com/topben/verify1st.git
    cd verify1st
-   ```
-
-2. Install dependencies:
-   ```bash
    npm install
    ```
 
-3. Create a `.env.local` file with your API key:
+2. Configure environment:
    ```bash
    cp .env.example .env.local
    ```
    Then edit `.env.local` and add your Gemini API key.
 
-4. Start the development server:
+3. Start the development server:
    ```bash
    npm run dev
    ```
 
-5. Open [http://localhost:3000](http://localhost:3000) in your browser.
+4. Open [http://localhost:3000](http://localhost:3000).
+
+### Tests
+
+```bash
+npm test
+```
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `GEMINI_API_KEY` | Yes | Your Google Gemini API key |
+| `GEMINI_MODEL` | No | Analysis model override (default `gemini-2.5-flash`) |
+| `GEMINI_THINKING_BUDGET` | No | Unset = model default; `0` disables thinking (cheaper/faster) |
 | `BLOB_READ_WRITE_TOKEN` | For production | Vercel Blob storage token (auto-configured on Vercel) |
-| `RATE_LIMIT_BACKEND` | No | `memory` by default to avoid Blob advanced operations; set `blob` only if you need shared Blob-backed limits |
-| `ML_DATA_BLOB_ENABLED` | No | `false` by default; set `true` to write full ML records to Blob |
-| `ML_DATA_SAMPLE_RATE` | No | `0`-`1` sampling rate for ML Blob records when enabled |
+| `BLOB_CACHE_ENABLED` | No | `true` by default; set `false` to pause the analysis cache |
+| `RATE_LIMIT_BACKEND` | No | `memory` (default) or `blob` for shared cross-instance limits |
+| `ML_DATA_BLOB_ENABLED` | No | `false` by default; `true` writes full ML records to Blob |
+| `ML_DATA_SAMPLE_RATE` | No | `0`–`1` sampling rate for ML Blob records when enabled |
 | `BLOB_PUBLIC_BASE_URL` | No | Optional public Blob base URL override for cache reads |
+| `GOOGLE_SAFE_BROWSING_KEY` | No | Enables Google Safe Browsing pre-check |
+| `VIRUSTOTAL_API_KEY` | No | Enables VirusTotal pre-check |
+| `GOOGLE_SHEETS_WEBHOOK_URL` | No | Logs flat analysis summaries for human labeling |
+| `BOT_API_KEY` | No | `X-Bot-Key` header value that bypasses per-IP rate limiting |
+| `COFACTS_APP_ID` | No | App id sent to the Cofacts API (default `VERIFYFIRST_AI`) |
 
 ## Deployment
 
@@ -88,7 +107,8 @@ This approach allows the AI to discover information across the entire web rather
 3. Add your `GEMINI_API_KEY` as an environment variable
 4. Deploy
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/verify1st)
+`vercel.json` raises `api/analyze.ts` to a 60s max duration — page observation
+plus grounded generation can exceed the default.
 
 ### Manual Build
 
@@ -102,13 +122,13 @@ npm run preview
 ```
 verify1st/
 ├── api/
-│   └── analyze.ts        # Serverless API endpoint with Google Search grounding
-├── components/
-│   ├── HistoryTimeline.tsx
-│   ├── SearchInput.tsx
-│   └── TrustMeter.tsx
+│   ├── analyze.ts            # Serverless endpoint: pre-checks → Gemini → post-processing
+│   ├── example-responses.ts  # Canned responses for demo chips (zero quota)
+│   └── safe-domains.ts       # Self/known-safe allowlist short-circuit
+├── components/               # React UI (results panels, search, senior mode)
 ├── services/
-│   └── geminiService.ts  # Frontend service for API calls
+│   └── geminiService.ts      # Frontend client for /api/analyze
+├── tests/                    # Vitest unit + handler integration tests
 ├── public/
 ├── App.tsx
 ├── index.tsx
@@ -118,13 +138,15 @@ verify1st/
 
 ## API Rate Limits
 
-- **10 requests per hour** per IP address
-- Results are cached for **24 hours**
-- Rate limit resets every hour
+- **10 requests per hour** per IP address (cache hits don't count)
+- Results are cached for **72 hours**
 
 ## Disclaimer
 
-This tool provides AI-generated analysis based on publicly available information. It should not be considered financial advice. Always do your own research before making investment decisions. The accuracy of the analysis depends on the AI model and available web data.
+This tool provides AI-generated analysis based on publicly available
+information. It is a first-step aid, not a guarantee — when in doubt, call
+Taiwan's 165 anti-fraud hotline. Accuracy depends on the AI model and
+available web data.
 
 ## Contributing
 
@@ -141,5 +163,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - Powered by [Google Gemini](https://ai.google.dev/) with Google Search grounding
-- Built with [React](https://react.dev/) and [Vite](https://vitejs.dev/)
-- Deployed on [Vercel](https://vercel.com/)
+- Community fact-checks from [Cofacts 真的假的](https://cofacts.tw)
+- Blocklists from [ScamSniffer](https://scamsniffer.io) and [VirusTotal](https://virustotal.com)
+- Built with [React](https://react.dev/) and [Vite](https://vitejs.dev/), deployed on [Vercel](https://vercel.com/)

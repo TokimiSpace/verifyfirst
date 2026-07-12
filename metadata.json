@@ -1,5 +1,5 @@
 {
-  "name": "CryptoTruth",
-  "description": "An AI-powered intelligence platform that analyzes Cryptocurrency KOLs (Key Opinion Leaders). It uses Google Search Grounding to audit their history, verifying calls, identifying successful predictions, and flagging controversies or 'rug pulls' to calculate a Trust Score.",
+  "name": "VerifyFirst AI",
+  "description": "First-step scam verification engine: paste a suspicious message, link, or phone number and get a plain-language risk verdict backed by blocklists, live page observation, community fact-checks, and Gemini search grounding.",
   "requestFramePermissions": []
 }
