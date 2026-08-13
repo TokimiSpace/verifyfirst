@@ -182,13 +182,6 @@ const getModeIcon = (mode: InputMode, className: string) => {
   }
 };
 
-const DETECTED_COLORS: Record<InputMode, string> = {
-  URL:      'text-blue-400 border-blue-400/40 bg-blue-400/10',
-  PHONE:    'text-emerald-400 border-emerald-400/40 bg-emerald-400/10',
-  HANDLE:   'text-pink-400 border-pink-400/40 bg-pink-400/10',
-  SMS_TEXT: 'text-purple-400 border-purple-400/40 bg-purple-400/10',
-};
-
 const MAX_TXT_CHARS = 50_000;
 
 const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language, isSeniorMode = false }) => {
@@ -320,26 +313,24 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
     <button
       type="submit"
       disabled={isLoading || ocrStatus === 'running' || (!input.trim() && !image)}
-      className={`bg-crypto-accent text-crypto-dark font-bold hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${
-        isSeniorMode ? 'px-8 py-4 rounded-xl text-xl' : 'px-6 py-2 rounded-full'
-      } ${extraClass}`}
+      className={`vf-submit ${isSeniorMode ? 'min-h-[54px] px-6 text-lg' : ''} ${extraClass}`}
     >
       {isLoading ? (
         <>
           <Loader2 className={`animate-spin ${isSeniorMode ? 'w-7 h-7' : 'w-5 h-5'}`} />
-          <span>{isSeniorMode ? t.scanningSenior : t.scanning}</span>
+          <span className="vf-submit-label">{isSeniorMode ? t.scanningSenior : t.scanning}</span>
         </>
       ) : (
         <>
           <Search className={isSeniorMode ? 'w-7 h-7' : 'w-5 h-5'} />
-          <span>{isSeniorMode ? t.auditSenior : t.audit}</span>
+          <span className="vf-submit-label">{isSeniorMode ? t.auditSenior : t.audit}</span>
         </>
       )}
     </button>
   );
 
   return (
-    <div className={`w-full mx-auto mb-12 ${isSeniorMode ? 'max-w-3xl' : 'max-w-2xl'}`}>
+    <div className="w-full">
       {/* Hidden file input for image upload */}
       <input
         ref={fileInputRef}
@@ -348,39 +339,6 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
         className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) { loadImageFile(f); setTxtFileName(null); } e.target.value = ''; }}
       />
-
-      {/* Image preview — shown while OCR is running */}
-      {image && (
-        <div className="relative mb-3 rounded-2xl overflow-hidden border border-crypto-accent/40 bg-gray-900">
-          <img src={image.dataUrl} alt="screenshot preview" className="w-full max-h-64 object-contain" />
-          {ocrStatus !== 'running' && (
-            <button
-              type="button"
-              onClick={() => { setImage(null); setOcrStatus('idle'); }}
-              className="absolute top-2 right-2 bg-gray-900/80 hover:bg-gray-800 text-gray-300 hover:text-white rounded-full p-1 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-          <div className="flex items-center justify-center gap-2 py-2">
-            {ocrStatus === 'running'
-              ? <Loader2 className="w-4 h-4 text-crypto-accent animate-spin" />
-              : <ScanText className="w-4 h-4 text-crypto-accent" />
-            }
-            <p className="text-xs text-crypto-accent">
-              {ocrStatus === 'running' ? t.ocrRunning : ocrStatus === 'failed' ? t.ocrFailed : t.imageReady}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* OCR done notice */}
-      {ocrStatus === 'done' && !image && input.trim() && (
-        <div className="flex items-center justify-center gap-1.5 mb-2">
-          <ScanText className="w-3 h-3 text-crypto-accent" />
-          <p className="text-xs text-crypto-accent">{t.ocrDone}</p>
-        </div>
-      )}
 
       {/* Hidden file inputs */}
       <input
@@ -391,16 +349,57 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
         onChange={(e) => { const f = e.target.files?.[0]; if (f) loadTextFile(f); e.target.value = ''; }}
       />
 
-      <form onSubmit={handleSubmit} className="relative group">
-        <div className="absolute inset-0 bg-crypto-accent opacity-20 blur-xl group-hover:opacity-30 transition-opacity rounded-full pointer-events-none"></div>
+      <div className="vf-search-console">
+        <div className="vf-console-head">
+          <div className="vf-console-label">
+            <span className="vf-live-dot" aria-hidden="true" />
+            <span>{language === 'zh-TW' ? '建立新的安全查核' : language === 'vi' ? 'Tạo kiểm tra an toàn mới' : 'Start a new safety check'}</span>
+          </div>
+          <span className="vf-console-meta">Read-only sandbox</span>
+        </div>
 
-        {useTextarea ? (
-          <div className={`relative bg-gray-900 border border-gray-700 shadow-2xl overflow-hidden focus-within:border-crypto-accent transition-colors rounded-2xl`}>
+        <div className="vf-console-body">
+          {/* Image preview — shown while OCR is running */}
+          {image && (
+            <div className="relative mb-3 overflow-hidden rounded-xl border border-gray-700 bg-gray-950">
+              <img src={image.dataUrl} alt="screenshot preview" className="w-full max-h-64 object-contain" />
+              {ocrStatus !== 'running' && (
+                <button
+                  type="button"
+                  onClick={() => { setImage(null); setOcrStatus('idle'); }}
+                  className="vf-icon-button absolute right-2 top-2 bg-gray-950/80"
+                  aria-label="Remove screenshot"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+              <div className="flex items-center justify-center gap-2 border-t border-gray-800 py-2">
+                {ocrStatus === 'running'
+                  ? <Loader2 className="w-4 h-4 text-crypto-accent animate-spin" />
+                  : <ScanText className="w-4 h-4 text-crypto-accent" />
+                }
+                <p className="text-xs text-crypto-accent">
+                  {ocrStatus === 'running' ? t.ocrRunning : ocrStatus === 'failed' ? t.ocrFailed : t.imageReady}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {ocrStatus === 'done' && !image && input.trim() && (
+            <div className="mb-2 flex items-center gap-1.5 text-xs text-crypto-accent">
+              <ScanText className="w-3 h-3" />
+              <p>{t.ocrDone}</p>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit}>
+          {useTextarea ? (
+          <div className="vf-search-field">
             {/* Filename badge when loaded from .txt */}
             {txtFileName && (
               <div className="flex items-center gap-2 px-4 pt-3">
-                <FileText className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
-                <span className="text-xs text-purple-300 font-medium truncate">{txtFileName}</span>
+                <FileText className="w-3.5 h-3.5 text-crypto-accent flex-shrink-0" />
+                <span className="truncate text-xs font-medium text-gray-300">{txtFileName}</span>
                 {input.length >= MAX_TXT_CHARS && (
                   <span className="text-xs text-yellow-400 flex-shrink-0">· {t.txtTooLarge}</span>
                 )}
@@ -414,22 +413,20 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
               </div>
             )}
             <textarea
-              className={`w-full bg-transparent text-white placeholder-gray-500 focus:outline-none font-sans resize-none ${
-                isSeniorMode ? 'p-6 text-xl min-h-[200px]' : 'p-4 text-lg min-h-[120px]'
-              } ${txtFileName ? 'pt-2' : ''}`}
+              className={`vf-search-textarea ${isSeniorMode ? 'min-h-[210px] p-6 text-xl' : ''} ${txtFileName ? 'pt-2' : ''}`}
               placeholder={placeholder}
               value={input}
               onChange={(e) => { setInput(e.target.value); if (txtFileName) setTxtFileName(null); }}
               disabled={isLoading}
             />
-            <div className={`flex items-center justify-between border-t border-gray-800 ${isSeniorMode ? 'p-4' : 'p-3'}`}>
-              <div className="flex items-center gap-2">
+            <div className="vf-field-footer">
+              <div className="vf-upload-actions">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isLoading}
                   title={t.uploadImage}
-                  className="text-gray-500 hover:text-crypto-accent transition-colors disabled:opacity-40"
+                  className="vf-icon-button disabled:opacity-40"
                 >
                   <ImagePlus className={isSeniorMode ? 'w-5 h-5' : 'w-4 h-4'} />
                 </button>
@@ -438,7 +435,7 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
                   onClick={() => txtInputRef.current?.click()}
                   disabled={isLoading}
                   title={t.uploadTxt}
-                  className="text-gray-500 hover:text-purple-400 transition-colors disabled:opacity-40"
+                  className="vf-icon-button disabled:opacity-40"
                 >
                   <FileText className={isSeniorMode ? 'w-5 h-5' : 'w-4 h-4'} />
                 </button>
@@ -447,10 +444,8 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
             </div>
           </div>
         ) : (
-          <div className={`relative flex items-center bg-gray-900 border border-gray-700 shadow-2xl overflow-hidden focus-within:border-crypto-accent transition-colors ${
-            isSeniorMode ? 'rounded-2xl' : 'rounded-full'
-          }`}>
-            <div className={`text-gray-400 ${isSeniorMode ? 'pl-8' : 'pl-6'}`}>
+          <div className="vf-search-field vf-search-field-row">
+            <div className="vf-search-leading">
               {input.trim() && displayedType
                 ? getModeIcon(displayedType, isSeniorMode ? 'w-6 h-6' : 'w-4 h-4')
                 : <Search className={isSeniorMode ? 'w-6 h-6' : 'w-4 h-4'} />
@@ -458,9 +453,7 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
             </div>
             <input
               type="text"
-              className={`w-full bg-transparent text-white placeholder-gray-500 focus:outline-none font-sans ${
-                isSeniorMode ? 'px-4 py-6 text-2xl' : 'px-2 py-4 text-lg'
-              }`}
+              className={`vf-search-input ${isSeniorMode ? 'min-h-[82px] text-xl' : ''}`}
               placeholder={placeholder}
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -471,7 +464,7 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
               onClick={() => txtInputRef.current?.click()}
               disabled={isLoading}
               title={t.uploadTxt}
-              className={`text-gray-500 hover:text-purple-400 transition-colors disabled:opacity-40 flex-shrink-0 ${isSeniorMode ? 'pr-2' : 'pr-1'}`}
+              className="vf-icon-button flex-shrink-0 disabled:opacity-40"
             >
               <FileText className={isSeniorMode ? 'w-6 h-6' : 'w-5 h-5'} />
             </button>
@@ -480,24 +473,24 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
               onClick={() => fileInputRef.current?.click()}
               disabled={isLoading}
               title={t.uploadImage}
-              className={`text-gray-400 hover:text-crypto-accent transition-colors disabled:opacity-40 flex-shrink-0 ${isSeniorMode ? 'pr-3' : 'pr-2'}`}
+              className="vf-icon-button flex-shrink-0 disabled:opacity-40"
             >
               <ImagePlus className={isSeniorMode ? 'w-6 h-6' : 'w-5 h-5'} />
             </button>
-            {submitButton(isSeniorMode ? 'mr-3' : 'mr-2')}
+            {submitButton()}
           </div>
         )}
-      </form>
+          </form>
 
       {/* Paste hint — shown when no image and no input */}
       {!image && !input.trim() && !isSeniorMode && (
-        <p className="text-center text-xs text-gray-600 mt-2">{t.pasteImage}</p>
+        <p className="vf-search-hint">{t.pasteImage}</p>
       )}
 
       {/* Detected Type Badge */}
       {displayedType && displayedType !== 'SMS_TEXT' && input.trim() && (
-        <div className="flex justify-center mt-3">
-          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium transition-all ${DETECTED_COLORS[displayedType]}`}>
+        <div>
+          <span className="vf-detected">
             {getModeIcon(displayedType, 'w-3 h-3')}
             {t.detectedLabel} {t.detected[displayedType]}
           </span>
@@ -508,9 +501,9 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
           Each card shows a redacted preview (xxxxx) so crawlers don't index
           the scam patterns; the real sample is sent to the backend on click. */}
       {!input.trim() && !isSeniorMode && (
-        <div className="mt-6">
-          <p className="text-center text-xs text-gray-500 mb-3">{t.scenarioHint}</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="vf-examples">
+          <p className="vf-examples-heading">{t.scenarioHint}</p>
+          <div className="vf-example-grid">
             {SCENARIO_CHIPS.map(({ id, icon, label, preview, sample }) => {
               const lang = language as keyof typeof label;
               return (
@@ -518,14 +511,14 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
                   key={id}
                   onClick={() => setInput(sample)}
                   aria-label={label[lang] ?? label.en}
-                  className="text-left p-3 rounded-lg bg-gray-800/60 hover:bg-gray-700/80 border border-gray-700 hover:border-crypto-accent/50 active:scale-[0.98] transition-all disabled:opacity-50"
+                  className="vf-example-card disabled:opacity-50"
                   disabled={isLoading}
                 >
-                  <div className="flex items-center gap-1.5 text-sm font-medium text-gray-200">
+                  <div className="vf-example-title">
                     <span>{icon}</span>
                     <span>{label[lang] ?? label.en}</span>
                   </div>
-                  <p className="mt-1 text-xs text-gray-400 leading-relaxed line-clamp-2">
+                  <p className="vf-example-copy">
                     {preview[lang] ?? preview.en}
                   </p>
                 </button>
@@ -534,6 +527,8 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
           </div>
         </div>
       )}
+        </div>
+      </div>
 
       {/* Senior Mode hint */}
       {isSeniorMode && !input.trim() && (

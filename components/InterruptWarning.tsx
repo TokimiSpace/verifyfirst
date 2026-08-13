@@ -154,11 +154,12 @@ const InterruptWarning: React.FC<InterruptWarningProps> = ({
 
   const displayVerdict = isSeniorMode ? (seniorModeVerdict ?? verdict) : verdict;
   const humanCopy = isHighRisk ? t.highHuman : isMediumRisk ? t.medHuman : t.lowHuman;
+  const riskClass = isHighRisk ? 'is-high' : isMediumRisk ? 'is-medium' : 'is-low';
 
   return (
-    <div className={`border-2 rounded-2xl overflow-hidden mb-5 ${headerBg}`}>
+    <div className={`vf-interrupt ${riskClass} border-2 rounded-2xl overflow-hidden mb-5 ${headerBg}`}>
       {/* ── Header: verdict + human copy + score badge ── */}
-      <div className={`px-5 py-5 ${isHighRisk ? 'bg-red-900/30' : isMediumRisk ? 'bg-yellow-900/20' : 'bg-green-900/15'}`}>
+      <div className={`vf-interrupt-header px-5 py-5 ${isHighRisk ? 'bg-red-900/30' : isMediumRisk ? 'bg-yellow-900/20' : 'bg-green-900/15'}`}>
         <div className="flex items-start gap-3">
           <ShieldAlert className={`flex-shrink-0 mt-0.5 ${isSeniorMode ? 'w-10 h-10' : 'w-7 h-7'} ${accentColor}`} />
           <div className="flex-1 min-w-0">
@@ -216,9 +217,9 @@ const InterruptWarning: React.FC<InterruptWarningProps> = ({
 
       {/* ── 3-Layer CTA: Stop / Leave / Verify ── */}
       {showCTA && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-gray-800/40">
+        <div className="vf-interrupt-grid grid grid-cols-1 sm:grid-cols-3 gap-px bg-gray-800/40">
           {/* Layer 1: Stop */}
-          <div className={`bg-red-950/50 ${isSeniorMode ? 'p-5' : 'p-4'}`}>
+          <div className={`vf-stop bg-red-950/50 ${isSeniorMode ? 'p-5' : 'p-4'}`}>
             <div className={`font-bold text-red-400 mb-3 ${isSeniorMode ? 'text-xl' : 'text-sm'}`}>
               {t.stopLabel}
             </div>
@@ -233,7 +234,7 @@ const InterruptWarning: React.FC<InterruptWarningProps> = ({
           </div>
 
           {/* Layer 2: Leave */}
-          <div className={`bg-orange-950/40 ${isSeniorMode ? 'p-5' : 'p-4'}`}>
+          <div className={`vf-leave bg-orange-950/40 ${isSeniorMode ? 'p-5' : 'p-4'}`}>
             <div className={`font-bold text-orange-400 mb-3 ${isSeniorMode ? 'text-xl' : 'text-sm'}`}>
               {t.leaveLabel}
             </div>
@@ -248,7 +249,7 @@ const InterruptWarning: React.FC<InterruptWarningProps> = ({
           </div>
 
           {/* Layer 3: Verify */}
-          <div className={`bg-blue-950/40 ${isSeniorMode ? 'p-5' : 'p-4'}`}>
+          <div className={`vf-verify bg-blue-950/40 ${isSeniorMode ? 'p-5' : 'p-4'}`}>
             <div className={`font-bold text-blue-400 mb-3 ${isSeniorMode ? 'text-xl' : 'text-sm'}`}>
               {t.verifyLabel}
             </div>
@@ -266,7 +267,7 @@ const InterruptWarning: React.FC<InterruptWarningProps> = ({
 
       {/* ── 165 CTA: zh-TW high-risk only ── */}
       {isHighRisk && language === 'zh-TW' && (
-        <div className="px-5 py-5 bg-red-900/25 border-t border-red-800/60 text-center">
+        <div className="vf-hotline px-5 py-5 bg-red-900/25 border-t border-red-800/60 text-center">
           <p className={`text-gray-300 mb-3 ${isSeniorMode ? 'text-xl' : 'text-xs'}`}>{t.tapToCall}</p>
           <a
             href="tel:165"

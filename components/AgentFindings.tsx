@@ -110,7 +110,7 @@ const AgentFindings: React.FC<AgentFindingsProps> = ({ agent, narrative, languag
     pageStatusInfo;
 
   return (
-    <section className="mb-6 rounded-3xl border border-gray-800 bg-gray-900/60 p-5">
+    <section className="vf-evidence-card mb-6 rounded-3xl border border-gray-800 bg-gray-900/60 p-5">
       <h3 className="mb-4 text-lg font-semibold text-white">{t.title}</h3>
 
       {/* Primary: LLM narrative */}

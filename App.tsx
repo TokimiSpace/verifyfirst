@@ -20,7 +20,7 @@ import PrimaryActions from './components/PrimaryActions';
 import AgentFindings from './components/AgentFindings';
 import CofactsFindings from './components/CofactsFindings';
 import ReportModal from './components/ReportModal';
-import { ShieldAlert, Search, Globe, CheckCircle2, AlertTriangle, Sparkles, ExternalLink, Accessibility, ChevronDown, ThumbsUp, ThumbsDown, RotateCcw, ArrowLeft } from 'lucide-react';
+import { ShieldAlert, Search, Globe, CheckCircle2, AlertTriangle, Sparkles, ExternalLink, Accessibility, ChevronDown, ThumbsUp, ThumbsDown, RotateCcw, ArrowLeft, LockKeyhole } from 'lucide-react';
 
 // UI Text dictionary for all static text
 const UI_TEXT = {
@@ -287,6 +287,59 @@ const LANG_OPTIONS: { code: Language; label: string }[] = [
   { code: 'vi',    label: 'VI'   },
 ];
 
+const LANDING_UI: Record<Language, {
+  eyebrow: string;
+  boundaryTitle: string;
+  boundaryBody: string;
+  seniorTitle: string;
+  seniorBody: string;
+  seniorAction: string;
+  capabilities: Array<{ title: string; description: string }>;
+}> = {
+  'zh-TW': {
+    eyebrow: '台灣第一步安全驗證引擎',
+    boundaryTitle: '只觀察，不替你操作',
+    boundaryBody: '沙盒不登入、不付款、不送出表單，也不會索取密碼或 OTP。',
+    seniorTitle: '給長輩使用大字版',
+    seniorBody: '更大的字、更短的說明與更直接的下一步。',
+    seniorAction: '開啟',
+    capabilities: [
+      { title: '安全開啟', description: '在唯讀沙盒中觀察可疑網址' },
+      { title: '追蹤轉址', description: '辨識短網址最後把你帶去哪裡' },
+      { title: '交叉比對', description: '查核安全資料庫與公開證據' },
+      { title: '給出下一步', description: '清楚告訴你停止、驗證或回報' },
+    ],
+  },
+  en: {
+    eyebrow: 'First-step safety verification for Taiwan',
+    boundaryTitle: 'We observe. We never act for you.',
+    boundaryBody: 'The sandbox never logs in, pays, submits forms, or asks for passwords and OTP codes.',
+    seniorTitle: 'Switch to Senior Mode',
+    seniorBody: 'Larger type, shorter explanations, and clearer next steps.',
+    seniorAction: 'Turn on',
+    capabilities: [
+      { title: 'Open safely', description: 'Observe suspicious links in a read-only sandbox' },
+      { title: 'Trace redirects', description: 'Reveal where shortened links actually lead' },
+      { title: 'Cross-check', description: 'Compare security databases and public evidence' },
+      { title: 'Choose next step', description: 'Know whether to stop, verify, or report' },
+    ],
+  },
+  vi: {
+    eyebrow: 'Xác minh an toàn bước đầu tại Đài Loan',
+    boundaryTitle: 'Chỉ quan sát, không thao tác thay bạn',
+    boundaryBody: 'Hộp cát không đăng nhập, thanh toán, gửi biểu mẫu hoặc yêu cầu mật khẩu và OTP.',
+    seniorTitle: 'Bật chế độ chữ lớn',
+    seniorBody: 'Chữ lớn hơn, giải thích ngắn hơn và bước tiếp theo rõ ràng hơn.',
+    seniorAction: 'Bật',
+    capabilities: [
+      { title: 'Mở an toàn', description: 'Quan sát liên kết trong hộp cát chỉ đọc' },
+      { title: 'Theo dõi chuyển hướng', description: 'Xem liên kết rút gọn thực sự dẫn đi đâu' },
+      { title: 'Đối chiếu', description: 'Kiểm tra cơ sở dữ liệu và bằng chứng công khai' },
+      { title: 'Chọn bước tiếp theo', description: 'Biết lúc nào nên dừng, xác minh hoặc báo cáo' },
+    ],
+  },
+};
+
 const App: React.FC = () => {
   const [language, setLanguage] = useState<Language>('zh-TW');
   const [loadingState, setLoadingState] = useState<LoadingState>('IDLE');
@@ -314,6 +367,7 @@ const App: React.FC = () => {
 
   // Get current language text
   const t = UI_TEXT[language];
+  const landing = LANDING_UI[language];
 
   // Get loading messages based on mode
   const loadingMessages = isSeniorMode ? t.loading.messagesSenior : t.loading.messages;
@@ -426,84 +480,61 @@ const App: React.FC = () => {
   };
 
 
-  // Senior mode styles
-  const seniorModeStyles = isSeniorMode ? {
-    container: 'text-xl',
-    heading: 'text-3xl md:text-4xl',
-    text: 'text-xl',
-  } : {
-    container: '',
-    heading: 'text-4xl md:text-6xl',
-    text: 'text-lg',
-  };
-
   return (
-    <div className={`min-h-screen bg-crypto-dark text-crypto-text font-sans selection:bg-crypto-accent selection:text-crypto-dark pb-20 ${seniorModeStyles.container} ${isSeniorMode ? 'senior-mode' : ''}`}>
+    <div className={`vf-app ${isSeniorMode ? 'senior-mode text-xl' : ''}`}>
       <Analytics />
 
       {/* Header */}
-      <header className={`sticky top-0 z-50 backdrop-blur-md bg-crypto-dark/80 border-b border-gray-800 ${isSeniorMode ? 'py-2' : ''}`}>
-        <div className={`container mx-auto px-4 flex items-center justify-between ${isSeniorMode ? 'h-20' : 'h-16'}`}>
-          <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <ShieldAlert className={`text-crypto-accent ${isSeniorMode ? 'w-8 h-8' : 'w-6 h-6'}`} />
-            <span className={`font-display font-bold tracking-tight text-white ${isSeniorMode ? 'text-2xl' : 'text-xl'}`}>
-              {t.appName}<span className="text-crypto-accent">{t.appNameHighlight}</span>
+      <header className="vf-header">
+        <div className={`vf-container vf-header-inner ${isSeniorMode ? 'min-h-[76px]' : ''}`}>
+          <a href="/" className="vf-brand">
+            <span className="vf-brand-mark">
+              <ShieldAlert className={isSeniorMode ? 'w-6 h-6' : 'w-[18px] h-[18px]'} />
+            </span>
+            <span className="vf-brand-copy">
+              <span className={`vf-brand-name ${isSeniorMode ? 'text-xl' : ''}`}>
+                {t.appName}<span className="text-crypto-accent">{t.appNameHighlight}</span>
+              </span>
+              <span className="vf-brand-subtitle">Safety verification desk</span>
             </span>
           </a>
-          <div className="flex items-center gap-3">
+          <div className="vf-header-actions">
             {/* Senior Mode Toggle */}
-            <div className="flex flex-col items-center gap-0.5">
-              <button
-                onClick={toggleSeniorMode}
-                className={`flex items-center gap-1.5 rounded-xl border-2 font-bold transition-all ${
-                  isSeniorMode
-                    ? 'bg-green-600 hover:bg-green-500 border-green-400 text-white shadow-lg shadow-green-900/40 px-4 py-2 text-base'
-                    : 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/60 text-amber-300 hover:border-amber-400 px-3 py-1.5 text-sm'
-                }`}
-              >
-                <Accessibility className={isSeniorMode ? 'w-5 h-5' : 'w-4 h-4'} />
-                <span>{isSeniorMode ? t.seniorModeOn : t.seniorModeOff}</span>
-              </button>
-              {!isSeniorMode && (
-                <span className="text-xs text-amber-500/70 hidden sm:block whitespace-nowrap">
-                  {(t as typeof UI_TEXT['zh-TW']).seniorModeDesc}
-                </span>
-              )}
-            </div>
+            <button
+              onClick={toggleSeniorMode}
+              className={`vf-header-control ${isSeniorMode ? 'is-active' : ''}`}
+              aria-pressed={isSeniorMode}
+            >
+              <Accessibility className={isSeniorMode ? 'w-5 h-5' : 'w-4 h-4'} />
+              <span className="vf-control-label">{isSeniorMode ? t.seniorModeOn : t.seniorModeOff}</span>
+            </button>
             {/* Language Dropdown */}
             <div className="relative" ref={langMenuRef}>
               <button
                 onClick={() => setLangMenuOpen(prev => !prev)}
-                className={`flex items-center gap-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 transition-colors font-medium ${
-                  isSeniorMode ? 'px-4 py-2 text-base' : 'px-3 py-1.5 text-sm'
-                }`}
+                className="vf-header-control"
+                aria-expanded={langMenuOpen}
               >
-                <Globe className={isSeniorMode ? 'w-5 h-5 text-crypto-accent' : 'w-4 h-4 text-crypto-accent'} />
-                <span className="text-white">{LANG_OPTIONS.find(o => o.code === language)?.label}</span>
-                <ChevronDown className={`text-gray-400 transition-transform duration-200 ${langMenuOpen ? 'rotate-180' : ''} ${isSeniorMode ? 'w-4 h-4' : 'w-3 h-3'}`} />
+                <Globe className={isSeniorMode ? 'w-5 h-5' : 'w-4 h-4'} />
+                <span className="vf-control-label">{LANG_OPTIONS.find(o => o.code === language)?.label}</span>
+                <ChevronDown className={`transition-transform duration-200 ${langMenuOpen ? 'rotate-180' : ''} w-3 h-3`} />
               </button>
               {langMenuOpen && (
-                <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden min-w-[90px]">
+                <div className="vf-language-menu">
                   {LANG_OPTIONS.map(({ code, label }) => (
                     <button
                       key={code}
                       onClick={() => { setLanguage(code); setLangMenuOpen(false); }}
-                      className={`w-full text-left px-4 py-2 flex items-center gap-2 transition-colors ${
-                        isSeniorMode ? 'text-base' : 'text-sm'
-                      } ${
-                        language === code
-                          ? 'bg-crypto-accent/10 text-crypto-accent font-semibold'
-                          : 'text-gray-300 hover:bg-gray-700'
-                      }`}
+                      className={`vf-language-option ${language === code ? 'is-active' : ''}`}
                     >
                       {label}
-                      {language === code && <span className="ml-auto text-crypto-accent text-xs">✓</span>}
+                      {language === code && <span className="ml-auto text-crypto-accent">✓</span>}
                     </button>
                   ))}
                 </div>
               )}
             </div>
-            <div className="text-xs text-gray-500 font-mono hidden md:block">
+            <div className="vf-powered-by hidden text-[9px] text-gray-600 font-mono lg:block">
               {t.poweredBy}
             </div>
           </div>
@@ -511,91 +542,56 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className={`container mx-auto px-4 ${isSeniorMode ? 'mt-8' : 'mt-12'}`}>
-
-        {/* Senior mode banner — shown on landing page when NOT in senior mode */}
-        {!isSeniorMode && !analysis && loadingState === 'IDLE' && (
-          <div className="max-w-2xl mx-auto mb-4 mt-8">
-            <button
-              onClick={toggleSeniorMode}
-              className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-amber-500/8 border border-amber-500/30 hover:bg-amber-500/15 hover:border-amber-500/50 transition-all group"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl select-none">👴</span>
-                <div className="text-left">
-                  <p className={`font-semibold text-amber-300 ${seniorModeStyles.text}`}>
-                    {language === 'zh-TW' ? '給長輩用：開啟大字版' : language === 'vi' ? 'Dành cho người cao tuổi: Bật chữ lớn' : 'For seniors: Switch to large text mode'}
-                  </p>
-                  <p className="text-xs text-amber-500/70 mt-0.5">
-                    {language === 'zh-TW' ? '字體更大・結果更簡單・適合長者閱讀' : language === 'vi' ? 'Chữ lớn hơn · Đơn giản hơn · Dễ đọc hơn' : 'Bigger text · Simpler results · Easier to read'}
-                  </p>
+      <main className="vf-container vf-main">
+        {!analysis && loadingState === 'IDLE' && (
+          <section className="vf-hero">
+            <div className="vf-hero-copy">
+              <span className="vf-eyebrow">{landing.eyebrow}</span>
+              <h1 className="vf-hero-title">
+                {t.hero.title}<br /><strong>{t.hero.titleHighlight}</strong>
+              </h1>
+              <p className={`vf-hero-description ${isSeniorMode ? 'text-xl' : ''}`}>
+                {isSeniorMode ? t.hero.descriptionSenior : t.hero.description}
+              </p>
+              <div className="vf-boundary-note">
+                <LockKeyhole className="w-5 h-5" />
+                <div>
+                  <strong>{landing.boundaryTitle}</strong>
+                  <p>{landing.boundaryBody}</p>
                 </div>
               </div>
-              <span className="text-amber-400 text-sm font-medium group-hover:underline whitespace-nowrap">
-                {language === 'zh-TW' ? '開啟 →' : language === 'vi' ? 'Bật →' : 'Turn on →'}
-              </span>
-            </button>
-          </div>
-        )}
-
-        {/* Hero / Search */}
-        <div className={`transition-all duration-500 ease-in-out ${analysis ? 'mt-0' : isSeniorMode ? 'mt-6' : 'mt-14'}`}>
-          {/* Hero text — hidden once results are shown */}
-          {!analysis && (
-            <div className={`text-center ${isSeniorMode ? 'mb-8' : 'mb-8'}`}>
-              <h1 className={`font-display font-bold text-white mb-3 ${seniorModeStyles.heading}`}>
-                {t.hero.title} <span className="text-transparent bg-clip-text bg-gradient-to-r from-crypto-accent to-blue-500">{t.hero.titleHighlight}</span>
-              </h1>
-
               {!isSeniorMode && (
-                <p className="text-gray-500 mx-auto max-w-xl text-base mb-5">
-                  {t.hero.description}
-                </p>
-              )}
-
-              {/* Feature capability pills */}
-              {!isSeniorMode && (
-                <div className="flex flex-wrap justify-center gap-2 mb-6">
-                  {(language === 'zh-TW' ? [
-                    { icon: '📩', label: '詐騙簡訊' },
-                    { icon: '🔗', label: '可疑網址' },
-                    { icon: '📸', label: '截圖 OCR' },
-                    { icon: '📄', label: '.txt 檔案' },
-                  ] : language === 'vi' ? [
-                    { icon: '📩', label: 'Tin nhắn lừa đảo' },
-                    { icon: '🔗', label: 'Liên kết đáng ngờ' },
-                    { icon: '📸', label: 'Ảnh chụp màn hình' },
-                    { icon: '📄', label: 'File .txt' },
-                  ] : [
-                    { icon: '📩', label: 'Scam SMS' },
-                    { icon: '🔗', label: 'Suspicious URL' },
-                    { icon: '📸', label: 'Screenshot OCR' },
-                    { icon: '📄', label: '.txt File' },
-                  ]).map(({ icon, label }) => (
-                    <span key={label} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-800 border border-gray-700 text-xs text-gray-400">
-                      <span>{icon}</span>
-                      <span>{label}</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {isSeniorMode && (
-                <p className={`text-gray-400 mx-auto max-w-xl ${seniorModeStyles.text}`}>
-                  {t.hero.descriptionSenior}
-                </p>
+                <button className="vf-senior-banner w-full" onClick={toggleSeniorMode}>
+                  <span>
+                    <strong>{landing.seniorTitle}</strong>
+                    <span>{landing.seniorBody}</span>
+                  </span>
+                  <strong>{landing.seniorAction} →</strong>
+                </button>
               )}
             </div>
-          )}
 
-          <SearchInput
-            key={searchInputKey}
-            onSearch={handleSearch}
-            isLoading={loadingState === 'SEARCHING' || loadingState === 'ANALYZING'}
-            language={language}
-            isSeniorMode={isSeniorMode}
-          />
-        </div>
+            <SearchInput
+              key={searchInputKey}
+              onSearch={handleSearch}
+              isLoading={false}
+              language={language}
+              isSeniorMode={isSeniorMode}
+            />
+
+            {!isSeniorMode && (
+              <div className="vf-capability-rail" aria-label="Verification process">
+                {landing.capabilities.map((item, index) => (
+                  <div className="vf-capability-step" key={item.title}>
+                    <span className="vf-capability-index">0{index + 1}</span>
+                    <strong>{item.title}</strong>
+                    <p>{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Loading State — 3-step progress indicator */}
         {(loadingState === 'SEARCHING' || loadingState === 'ANALYZING') && (() => {
@@ -605,51 +601,30 @@ const App: React.FC = () => {
             ? ['Quét tên miền', 'Phân tích AI', 'Tạo báo cáo']
             : ['Scanning domain & databases', 'AI analysis', 'Building report'];
           return (
-            <div className={`flex flex-col items-center justify-center ${isSeniorMode ? 'mt-16' : 'mt-16'}`}>
-              {/* Spinner */}
-              <div className={`border-4 border-crypto-accent border-t-transparent rounded-full animate-spin mb-6 ${
-                isSeniorMode ? 'w-16 h-16' : 'w-12 h-12'
-              }`} />
-              {/* Step indicators */}
-              <div className="flex items-center gap-2 mb-5">
+            <div className={`vf-loading-card ${isSeniorMode ? 'p-10' : ''}`}>
+              <div className="vf-pixel-loader" aria-hidden="true">
+                {Array.from({ length: 9 }).map((_, index) => <span key={index} />)}
+              </div>
+              <h2 className={`vf-loading-title ${isSeniorMode ? 'text-2xl' : ''}`}>
+                {loadingMessages[loadingMessageIndex]}
+              </h2>
+              <div className="vf-progress-list">
                 {steps.map((label, i) => {
                   const stepNum = (i + 1) as 1 | 2 | 3;
                   const isActive = loadingStep === stepNum;
                   const isDone = loadingStep > stepNum;
                   return (
-                    <React.Fragment key={label}>
-                      <div className="flex flex-col items-center gap-1">
-                        <div className={`rounded-full flex items-center justify-center font-bold transition-all duration-500 ${
-                          isSeniorMode ? 'w-10 h-10 text-base' : 'w-7 h-7 text-xs'
-                        } ${
-                          isDone
-                            ? 'bg-crypto-accent text-crypto-dark'
-                            : isActive
-                            ? 'bg-crypto-accent/20 border-2 border-crypto-accent text-crypto-accent animate-pulse'
-                            : 'bg-gray-800 border border-gray-700 text-gray-600'
-                        }`}>
-                          {isDone ? '✓' : stepNum}
-                        </div>
-                        <span className={`transition-colors duration-300 ${
-                          isSeniorMode ? 'text-sm' : 'text-xs'
-                        } ${
-                          isDone || isActive ? 'text-gray-300' : 'text-gray-600'
-                        }`}>{label}</span>
-                      </div>
-                      {i < steps.length - 1 && (
-                        <div className={`h-px w-8 transition-colors duration-500 ${
-                          loadingStep > stepNum ? 'bg-crypto-accent' : 'bg-gray-700'
-                        }`} />
-                      )}
-                    </React.Fragment>
+                    <div className={`vf-progress-row ${isDone ? 'is-done' : ''} ${isActive ? 'is-active' : ''}`} key={label}>
+                      <span className="font-mono text-[9px]">0{stepNum}</span>
+                      <span className={isSeniorMode ? 'text-lg' : ''}>{label}</span>
+                      <span className="vf-progress-state">
+                        {isDone ? 'done' : isActive ? 'running' : 'queued'}
+                      </span>
+                    </div>
                   );
                 })}
               </div>
-              {/* Current message */}
-              <p className={`font-display text-crypto-accent animate-pulse text-center ${isSeniorMode ? 'text-2xl' : 'text-lg'}`}>
-                {loadingMessages[loadingMessageIndex]}
-              </p>
-              <p className={`text-gray-600 mt-1 ${isSeniorMode ? 'text-base' : 'text-xs'}`}>
+              <p className={`mt-4 text-gray-500 ${isSeniorMode ? 'text-base' : 'text-[10px] font-mono'}`}>
                 {isSeniorMode ? t.loading.waitSenior : t.loading.wait}
               </p>
             </div>
@@ -658,7 +633,7 @@ const App: React.FC = () => {
 
         {/* Error State */}
         {loadingState === 'ERROR' && (
-          <div className={`max-w-2xl mx-auto mt-10 bg-red-900/20 border border-red-900 rounded-xl text-center ${
+          <div className={`vf-error-card ${
             isSeniorMode ? 'p-8' : 'p-6'
           }`}>
             <ShieldAlert className={`text-red-500 mx-auto mb-4 ${isSeniorMode ? 'w-16 h-16' : 'w-12 h-12'}`} />
@@ -669,7 +644,7 @@ const App: React.FC = () => {
             <div className={`flex flex-col sm:flex-row items-center justify-center gap-3 ${isSeniorMode ? 'mt-8' : 'mt-5'}`}>
               <button
                 onClick={handleReset}
-                className={`inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-200 font-semibold rounded-xl transition-colors ${
+                className={`vf-header-control ${
                   isSeniorMode ? 'px-8 py-4 text-xl' : 'px-5 py-2.5 text-sm'
                 }`}
               >
@@ -692,28 +667,22 @@ const App: React.FC = () => {
 
         {/* Results View */}
         {analysis && loadingState === 'COMPLETED' && (
-          <div ref={resultsRef} className="animate-fade-in-up max-w-3xl mx-auto">
+          <div ref={resultsRef} className="vf-results">
 
             {/* Check Another — top of results, all screen sizes */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="vf-results-toolbar">
               <button
                 onClick={handleReset}
-                className={`inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors group ${
+                className={`vf-back-button group ${
                   isSeniorMode ? 'text-lg' : 'text-sm'
                 }`}
               >
                 <ArrowLeft className={`transition-transform group-hover:-translate-x-0.5 ${isSeniorMode ? 'w-5 h-5' : 'w-4 h-4'}`} />
-                {language === 'zh-TW' ? '← 再查一次' : language === 'vi' ? '← Kiểm tra lại' : '← Check Another'}
+                {language === 'zh-TW' ? '再查一次' : language === 'vi' ? 'Kiểm tra lại' : 'Check another'}
               </button>
-              {analysis.source === 'cache' ? (
-                <span className="text-xs text-blue-400 bg-blue-900/20 border border-blue-800 px-2 py-0.5 rounded">
-                  {t.results.cachedResult}
-                </span>
-              ) : (
-                <span className="text-xs text-green-400 bg-green-900/20 border border-green-800 px-2 py-0.5 rounded">
-                  {t.results.liveAnalysis}
-                </span>
-              )}
+              <span className="vf-source-badge">
+                {analysis.source === 'cache' ? t.results.cachedResult : t.results.liveAnalysis}
+              </span>
             </div>
 
             {analysis.degradation && analysis.degradation.level !== 'L0' && (
@@ -892,7 +861,7 @@ const App: React.FC = () => {
             )}
 
             {/* Feedback row */}
-            <div className={`mb-6 flex flex-col items-center gap-3 py-4 border-t border-gray-800 ${isSeniorMode ? 'text-lg' : 'text-sm'}`}>
+            <div className={`vf-feedback mb-6 flex flex-col items-center gap-3 py-5 border-t ${isSeniorMode ? 'text-lg' : 'text-sm'}`}>
               {feedbackGiven === null ? (
                 <>
                   <p className="text-gray-500">
@@ -947,7 +916,7 @@ const App: React.FC = () => {
         <div className="fixed bottom-6 right-6 z-40 md:hidden">
           <button
             onClick={handleReset}
-            className="bg-crypto-accent text-crypto-dark px-5 py-3 rounded-full shadow-lg font-bold flex items-center gap-2"
+            className="vf-submit px-5 py-3 rounded-full shadow-lg font-bold flex items-center gap-2"
           >
             <Search size={18} /> {t.search.newSearch}
           </button>
@@ -964,19 +933,18 @@ const App: React.FC = () => {
       )}
 
       {/* Footer: Free API Acknowledgments */}
-      <footer className="mt-16 border-t border-gray-800 py-8 px-4">
-        <div className="container mx-auto text-center">
-          <p className="text-xs text-gray-600 mb-3 uppercase tracking-widest font-display">
+      <footer className="vf-footer">
+        <div className="vf-container vf-footer-inner">
+          <p className="m-0 font-mono uppercase tracking-[0.12em]">
             {language === 'zh-TW' ? '感謝以下免費服務的支持' : 'Powered by free & open services'}
           </p>
-          <div className="flex flex-wrap justify-center gap-4 text-xs text-gray-500">
+          <div className="vf-footer-services">
             <span className="flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-crypto-accent" />
+              <CheckCircle2 className="w-3 h-3" />
               <span>ScamSniffer Scam Database</span>
             </span>
-            <span className="text-gray-700">·</span>
             <span className="flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-crypto-accent" />
+              <CheckCircle2 className="w-3 h-3" />
               <span>VirusTotal</span>
             </span>
             <span className="text-gray-700">·</span>
@@ -986,7 +954,7 @@ const App: React.FC = () => {
               rel="noopener noreferrer"
               className="flex items-center gap-1 hover:text-gray-300 transition-colors"
             >
-              <CheckCircle2 className="w-3 h-3 text-crypto-accent" />
+              <CheckCircle2 className="w-3 h-3" />
               <span>Cofacts {language === 'zh-TW' ? '真的假的' : ''}</span>
             </a>
           </div>

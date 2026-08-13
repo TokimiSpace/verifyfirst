@@ -41,32 +41,25 @@ const PrimaryActions: React.FC<PrimaryActionsProps> = ({ actions, officialRoute,
     description: '',
   };
 
-  const buttonClass = (emphasis: PrimaryAction['emphasis']) => {
-    if (emphasis === 'disabled') {
-      return 'cursor-not-allowed border-gray-700 bg-gray-900 text-gray-500';
-    }
-    if (emphasis === 'secondary') {
-      return 'border-amber-700/50 bg-amber-950/30 text-amber-100 hover:bg-amber-900/40';
-    }
-    return 'border-cyan-700/50 bg-cyan-400 text-black hover:bg-cyan-300';
-  };
-
   return (
-    <section className="mb-5 grid gap-3 md:grid-cols-2">
+    <section className="vf-primary-actions">
       {[officialAction, reportAction].map((action) => {
         const isDisabled = action.emphasis === 'disabled' || (!action.actionUrl && action.kind !== 'REPORT');
         const icon = action.kind === 'REPORT'
           ? <Flag className="w-5 h-5" />
           : <ShieldCheck className="w-5 h-5" />;
 
+        const actionClass = `vf-primary-action ${
+          isDisabled ? 'is-disabled' : action.emphasis === 'primary' ? 'is-primary' : action.kind === 'REPORT' ? 'is-report' : ''
+        }`;
         const content = (
-          <div className={`rounded-2xl border p-4 transition-colors ${buttonClass(action.emphasis)}`}>
-            <div className="mb-2 flex items-center gap-2 font-semibold">
+          <div className={actionClass}>
+            <div className="vf-primary-action-title">
               {icon}
               <span>{action.label}</span>
               {!isDisabled && <ExternalLink className="ml-auto w-4 h-4 opacity-70" />}
             </div>
-            <p className="text-sm opacity-80">{action.description}</p>
+            <p>{action.description}</p>
           </div>
         );
 
