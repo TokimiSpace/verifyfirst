@@ -30,7 +30,7 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
 - **Frontend**: React 19, TypeScript, Tailwind CSS, Vite
 - **AI**: Google Gemini 2.5 Flash with Google Search grounding
 - **Backend**: Vercel Serverless Functions
-- **Caching**: Vercel Blob Storage (72h analysis cache)
+- **Caching**: bounded in-memory L1 + hot-entry Vercel Blob L2 (72h)
 - **OCR**: tesseract.js (lazy-loaded, in-browser)
 
 ## How an Analysis Works
@@ -42,7 +42,10 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
    VirusTotal, DNS, Cofacts, plus live page observation for URLs
 4. Gemini analyzes with search grounding, receiving the facts as ground truth
 5. Code-level post-processing: blocklist verdict floors, low-evidence
-   normalization, PII masking, then the result is cached for 72 hours
+   normalization, and PII masking
+6. The result enters a bounded memory cache immediately; only entries requested
+   twice are promoted to the shared 72-hour Blob cache, avoiding writes for
+   one-off messages
 
 ## Getting Started
 
@@ -87,10 +90,12 @@ npm test
 | `GEMINI_MODEL` | No | Analysis model override (default `gemini-2.5-flash`) |
 | `GEMINI_THINKING_BUDGET` | No | Unset = model default; `0` disables thinking (cheaper/faster) |
 | `BLOB_READ_WRITE_TOKEN` | For production | Vercel Blob storage token (auto-configured on Vercel) |
-| `BLOB_CACHE_ENABLED` | No | `true` by default; set `false` to pause the analysis cache |
-| `RATE_LIMIT_BACKEND` | No | `memory` (default) or `blob` for shared cross-instance limits |
+| `BLOB_CACHE_ENABLED` | No | `true` by default; set `false` to disable Blob persistence (bounded memory cache remains active) |
+| `BLOB_CACHE_MIN_HITS` | No | Blob admission threshold (default `2`); `1` restores write-on-first-miss, `0` disables Blob cache writes |
+| `MEMORY_CACHE_MAX_ENTRIES` | No | Maximum warm-instance analysis entries (default `200`, capped at `2000`) |
+| `RATE_LIMIT_BACKEND` | No | `memory` (default) or `blob` for shared limits; `blob` consumes `list`/`put` advanced operations |
 | `ML_DATA_BLOB_ENABLED` | No | `false` by default; `true` writes full ML records to Blob |
-| `ML_DATA_SAMPLE_RATE` | No | `0`–`1` sampling rate for ML Blob records when enabled |
+| `ML_DATA_SAMPLE_RATE` | No | `0`–`1` sampling rate for ML Blob records when enabled (default `0.1`) |
 | `BLOB_PUBLIC_BASE_URL` | No | Optional public Blob base URL override for cache reads |
 | `GOOGLE_SAFE_BROWSING_KEY` | No | Enables Google Safe Browsing pre-check |
 | `VIRUSTOTAL_API_KEY` | No | Enables VirusTotal pre-check |
@@ -139,7 +144,8 @@ verify1st/
 ## API Rate Limits
 
 - **10 requests per hour** per IP address (cache hits don't count)
-- Results are cached for **72 hours**
+- Results enter a warm-instance cache immediately; repeated entries are promoted
+  to the shared Blob cache for **72 hours**
 
 ## Disclaimer
 

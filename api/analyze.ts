@@ -11,6 +11,21 @@ import { isKnownSafeUrl, getSafeResponse } from "./safe-domains.js";
 interface SafeBlob { url: string; uploadedAt: string | Date }
 const inMemoryBlobs = new Map<string, { data: string; uploadedAt: Date; url: string }>();
 const inMemoryRateLimits = new Map<string, { windowStart: number; count: number }>();
+
+interface MemoryAnalysisEntry {
+  data: any;
+  cachedAt: number;
+  expiresAt: number;
+  hits: number;
+  persisted: boolean;
+  nextPromotionAt: number;
+}
+
+// L1 cache + frequency-gated admission. One-off lookups stay in the warm
+// function instance; only content requested at least N times is promoted to
+// Blob. This is important for scam analysis, where most pasted messages are
+// unique and writing every miss wastes Hobby Advanced Operations.
+const memoryAnalysisCache = new Map<string, MemoryAnalysisEntry>();
 let blobDegraded = false;
 
 // An empty-string env var (set but blank) means "unset" — without the trim
@@ -28,8 +43,11 @@ const numberFromEnv = (value: string | undefined, defaultValue: number): number 
 
 const getRateLimitBackend = () => (process.env.RATE_LIMIT_BACKEND || 'memory').toLowerCase();
 const isMLBlobCollectionEnabled = () => boolFromEnv(process.env.ML_DATA_BLOB_ENABLED, false);
-const getMLBlobSampleRate = () => Math.min(1, Math.max(0, numberFromEnv(process.env.ML_DATA_SAMPLE_RATE, 1)));
+const getMLBlobSampleRate = () => Math.min(1, Math.max(0, numberFromEnv(process.env.ML_DATA_SAMPLE_RATE, 0.1)));
 const isBlobCacheEnabled = () => boolFromEnv(process.env.BLOB_CACHE_ENABLED, true);
+const getBlobCacheMinHits = () => Math.min(20, Math.max(0, Math.floor(numberFromEnv(process.env.BLOB_CACHE_MIN_HITS, 2))));
+const getMemoryCacheMaxEntries = () => Math.min(2000, Math.max(10, Math.floor(numberFromEnv(process.env.MEMORY_CACHE_MAX_ENTRIES, 200))));
+const CACHE_PROMOTION_RETRY_MS = 60 * 60 * 1000;
 
 const buildPublicBlobUrl = (path: string): string | null => {
   const explicitBase = process.env.BLOB_PUBLIC_BASE_URL;
@@ -81,7 +99,12 @@ const safeHead = async (path: string): Promise<{ blob: SafeBlob | null; degraded
 
 const safePut = async (path: string, body: string): Promise<{ degraded: boolean }> => {
   try {
-    await put(path, body, { access: 'public', addRandomSuffix: false, contentType: 'application/json' });
+    await put(path, body, {
+      access: 'public',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      contentType: 'application/json',
+    });
     return { degraded: false };
   } catch (err) {
     console.error('[Blob] put failed:', (err as Error).message);
@@ -328,6 +351,24 @@ const sanitizeInput = (input: string, inputType: 'URL' | 'SMS_TEXT' | 'PHONE'): 
 };
 
 /**
+ * Canonicalize only syntax that URL itself guarantees is equivalent before
+ * hashing cache keys. Query order, tracking parameters, fragments, whitespace,
+ * and Unicode width are deliberately preserved because any of them can affect
+ * redirects, SPA routing, or security signals on an adversarial page/message.
+ */
+export const canonicalizeCacheInput = (input: string, inputType: string): string => {
+  if (inputType === 'URL') {
+    try {
+      return new URL(input).toString();
+    } catch {
+      return input.trim();
+    }
+  }
+
+  return input.trim();
+};
+
+/**
  * Generate cache key for different input types.
  *
  * SHA-256 (truncated to 96 bits) — the previous 32-bit rolling hash could
@@ -335,7 +376,8 @@ const sanitizeInput = (input: string, inputType: 'URL' | 'SMS_TEXT' | 'PHONE'): 
  * phone keys embedded the raw number (PII) in a public blob path.
  */
 const generateCacheKey = (input: string, inputType: string): string => {
-  const digest = createHash('sha256').update(`${inputType}:${input}`).digest('hex').slice(0, 24);
+  const canonicalInput = canonicalizeCacheInput(input, inputType);
+  const digest = createHash('sha256').update(`${inputType}:${canonicalInput}`).digest('hex').slice(0, 24);
   return `${inputType.toLowerCase().replace(/[^a-z]/g, '')}-${digest}`;
 };
 
@@ -565,12 +607,94 @@ const buildCachePath = (cacheKey: string, language: string): string => {
   return `cache/${cacheKey}-${language}.json`;
 };
 
+const pruneMemoryAnalysisCache = (now = Date.now()) => {
+  for (const [key, entry] of memoryAnalysisCache) {
+    if (entry.expiresAt <= now) memoryAnalysisCache.delete(key);
+  }
+
+  const maxEntries = getMemoryCacheMaxEntries();
+  while (memoryAnalysisCache.size > maxEntries) {
+    const oldestKey = memoryAnalysisCache.keys().next().value;
+    if (!oldestKey) break;
+    memoryAnalysisCache.delete(oldestKey);
+  }
+};
+
+const rememberAnalysisInMemory = (
+  cachePath: string,
+  data: any,
+  cachedAt = Date.now(),
+  persisted = false,
+): MemoryAnalysisEntry => {
+  const existing = memoryAnalysisCache.get(cachePath);
+  const entry: MemoryAnalysisEntry = {
+    data,
+    cachedAt,
+    expiresAt: cachedAt + CACHE_DURATION_MS,
+    hits: Math.max(1, existing?.hits ?? 1),
+    persisted: persisted || existing?.persisted || false,
+    nextPromotionAt: existing?.nextPromotionAt ?? 0,
+  };
+
+  // Map insertion order is our bounded LRU queue.
+  memoryAnalysisCache.delete(cachePath);
+  memoryAnalysisCache.set(cachePath, entry);
+  pruneMemoryAnalysisCache();
+  return entry;
+};
+
+const promoteHotAnalysisToBlob = async (cachePath: string, entry: MemoryAnalysisEntry) => {
+  const minHits = getBlobCacheMinHits();
+  const now = Date.now();
+  if (
+    !isBlobCacheEnabled() ||
+    minHits === 0 ||
+    entry.persisted ||
+    entry.hits < minHits ||
+    entry.nextPromotionAt > now
+  ) return false;
+
+  const result = await safePut(cachePath, JSON.stringify(entry.data));
+  if (result.degraded) {
+    // Do not hammer an exhausted/unavailable Blob store on every hot-cache hit.
+    entry.nextPromotionAt = now + CACHE_PROMOTION_RETRY_MS;
+    return false;
+  }
+
+  entry.persisted = true;
+  entry.nextPromotionAt = 0;
+  console.log(`Promoted hot analysis to Blob after ${entry.hits} hits: ${cachePath}`);
+  return true;
+};
+
 /**
- * Check if cached data exists and is still valid
+ * Check the bounded in-memory L1 first, then the shared Blob L2. A second L1
+ * hit promotes the entry to Blob by default, eliminating writes for one-off
+ * scam messages while preserving shared cache for repeated campaigns.
  */
 const getCachedAnalysis = async (handle: string, language: string) => {
-  if (!isBlobCacheEnabled()) return null;
   const cachePath = buildCachePath(handle, language);
+  const now = Date.now();
+
+  const memoryEntry = memoryAnalysisCache.get(cachePath);
+  if (memoryEntry) {
+    if (memoryEntry.expiresAt <= now) {
+      memoryAnalysisCache.delete(cachePath);
+    } else {
+      memoryEntry.hits = Math.min(1_000_000, memoryEntry.hits + 1);
+      memoryAnalysisCache.delete(cachePath);
+      memoryAnalysisCache.set(cachePath, memoryEntry);
+      await promoteHotAnalysisToBlob(cachePath, memoryEntry);
+      console.log(`Memory cache hit for ${handle} (hits: ${memoryEntry.hits})`);
+      return {
+        data: memoryEntry.data,
+        cachedAt: memoryEntry.cachedAt,
+        tier: 'memory' as const,
+      };
+    }
+  }
+
+  if (!isBlobCacheEnabled()) return null;
   const { blob } = await safeHead(cachePath);
 
   if (!blob) {
@@ -597,19 +721,49 @@ const getCachedAnalysis = async (handle: string, language: string) => {
   }
 
   console.log(`Cache hit for ${handle} (age: ${Math.round(age / 1000 / 60)} minutes)`);
+  rememberAnalysisInMemory(cachePath, data, uploadedAt, true);
   return {
     data,
-    cachedAt: uploadedAt
+    cachedAt: uploadedAt,
+    tier: 'blob' as const,
   };
 };
 
 /**
- * Save analysis result to Vercel Blob cache
+ * Always retain a bounded warm-instance copy. Blob persistence is admitted
+ * only after the configured hit threshold (2 by default).
  */
-const setCachedAnalysis = async (handle: string, language: string, data: any) => {
-  if (!isBlobCacheEnabled()) return;
+const setCachedAnalysis = async (
+  handle: string,
+  language: string,
+  data: any,
+  forceRefresh = false,
+) => {
   const cachePath = buildCachePath(handle, language);
-  await safePut(cachePath, JSON.stringify(data));
+  const previousEntry = memoryAnalysisCache.get(cachePath);
+  const entry = rememberAnalysisInMemory(cachePath, data);
+
+  if (forceRefresh && isBlobCacheEnabled() && getBlobCacheMinHits() > 0) {
+    // Refresh an existing L2 value, but do not let a caller turn arbitrary
+    // first-time forceRefresh requests into Blob writes. A cold instance uses
+    // the cheap head operation to distinguish those cases.
+    let blobAlreadyExists = previousEntry?.persisted ?? false;
+    if (!blobAlreadyExists) {
+      const { blob } = await safeHead(cachePath);
+      blobAlreadyExists = Boolean(blob);
+    }
+
+    if (blobAlreadyExists) {
+      entry.persisted = false;
+      entry.hits = Math.max(entry.hits, getBlobCacheMinHits());
+    }
+  }
+
+  await promoteHotAnalysisToBlob(cachePath, entry);
+  return {
+    tier: entry.persisted ? 'blob' as const : 'memory' as const,
+    hits: entry.hits,
+  };
 };
 
 
@@ -1941,9 +2095,11 @@ export default async function handler(req: any, res: any) {
           riskSignals: cached.data.riskSignals || [],
           suggestedActions: cached.data.suggestedActions || [],
           inputType: cached.data.inputType || detectedType,
-          originalInput: cached.data.originalInput || sanitizedInput,
+          // Always reflect the caller's current sanitized input, including when
+          // reading a cache record written by an older application version.
+          originalInput: sanitizedInput,
           scamProbability: cached.data.scamProbability ?? (cached.data.trustScore != null ? (100 - cached.data.trustScore) : 50),
-          normalizedInput: cached.data.normalizedInput || normalizeInput(sanitizedInput, detectedType),
+          normalizedInput: normalizeInput(sanitizedInput, detectedType),
           finalVerdict: cached.data.finalVerdict || deriveFinalVerdict(cached.data.scamProbability ?? (100 - (cached.data.trustScore ?? 50))),
           conclusion: cached.data.conclusion || cached.data.verdict || sanitizedInput,
           agentVerification: cached.data.agentVerification || {
@@ -1976,10 +2132,12 @@ export default async function handler(req: any, res: any) {
 
         // If Blob was degraded even on cache read, report it; otherwise L0.
         const cacheDegraded: string[] = isBlobDegraded() ? ['Vercel Blob'] : [];
+        res.setHeader('X-VerifyFirst-Cache', `HIT; tier=${cached.tier}`);
         return res.status(200).json({
           ...normalizedCache,
           handle: normalizedCache.handle || '',
           source: 'cache',
+          cacheTier: cached.tier,
           cachedAt: cached.cachedAt,
           degradation: computeDegradation(cacheDegraded)
         });
@@ -2471,7 +2629,8 @@ OUTPUT JSON ONLY:
     // Save to cache before responding. Fire-and-forget writes get killed when
     // the invocation freezes after res.json() — every lost write is a future
     // Gemini call we pay for again. safePut never throws.
-    await setCachedAnalysis(cacheKey, language, fullData);
+    const cacheStore = await setCachedAnalysis(cacheKey, language, fullData, Boolean(forceRefresh));
+    res.setHeader('X-VerifyFirst-Cache', `MISS; stored=${cacheStore.tier}; hits=${cacheStore.hits}`);
 
     const submissionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const submissionTs = new Date().toISOString();

@@ -46,6 +46,9 @@ beforeEach(() => {
   delete process.env.ML_DATA_BLOB_ENABLED;
   delete process.env.ML_DATA_SAMPLE_RATE;
   delete process.env.RATE_LIMIT_BACKEND;
+  delete process.env.BLOB_CACHE_ENABLED;
+  delete process.env.BLOB_CACHE_MIN_HITS;
+  delete process.env.MEMORY_CACHE_MAX_ENTRIES;
 });
 
 // Minimal res mock that captures status and JSON payload.
@@ -260,7 +263,7 @@ describe('POST /api/analyze — happy-path degradation', () => {
     expect(res.jsonBody.degradation).toMatchObject({ level: 'L0', score: 0, services: [] });
   });
 
-  it('avoids Blob advanced operations for rate limit and ML records by default', async () => {
+  it('keeps one-off analyses in memory and promotes only on the second hit', async () => {
     const { default: handler } = await import('../api/analyze');
 
     mockGenerateContent.mockResolvedValueOnce({
@@ -268,19 +271,75 @@ describe('POST /api/analyze — happy-path degradation', () => {
       candidates: [{ groundingMetadata: { groundingChunks: [], webSearchQueries: [] } }],
     });
 
-    const res = makeRes();
+    const firstRes = makeRes();
     await handler(
       makeReq({ input: 'another plain message', inputType: 'SMS_TEXT', language: 'en' }),
-      res
+      firstRes
     );
-    await new Promise(resolve => setTimeout(resolve, 0));
 
+    expect(mockBlobHead).toHaveBeenCalledTimes(1);
+    expect(mockBlobList).not.toHaveBeenCalled();
+    expect(mockBlobPut).not.toHaveBeenCalled();
+    expect(firstRes.jsonBody.source).toBe('api');
+    expect(firstRes.headers['X-VerifyFirst-Cache']).toBe('MISS; stored=memory; hits=1');
+
+    const secondRes = makeRes();
+    await handler(
+      makeReq({ input: 'another plain message', inputType: 'SMS_TEXT', language: 'en' }),
+      secondRes
+    );
+
+    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
     expect(mockBlobHead).toHaveBeenCalledTimes(1);
     expect(mockBlobList).not.toHaveBeenCalled();
     expect(mockBlobPut).toHaveBeenCalledTimes(1);
     // sha256-based cache key: cache/<type>-<24 hex chars>-<lang>.json
     expect(vi.mocked(mockBlobPut).mock.calls[0]?.[0]).toMatch(/^cache\/smstext-[0-9a-f]{24}-en\.json$/);
     expect(vi.mocked(mockBlobPut).mock.calls.some(call => String(call[0]).startsWith('ml-data/'))).toBe(false);
+    expect(secondRes.jsonBody).toMatchObject({ source: 'cache', cacheTier: 'memory' });
+    expect(secondRes.headers['X-VerifyFirst-Cache']).toBe('HIT; tier=memory');
+  });
+
+  it('can restore first-hit Blob persistence with BLOB_CACHE_MIN_HITS=1', async () => {
+    process.env.BLOB_CACHE_MIN_HITS = '1';
+    const { default: handler } = await import('../api/analyze');
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 80, sp: 20, v: 'test verdict', cn: 'safe', b: 'bio', d: 'name' }),
+      candidates: [{ groundingMetadata: { groundingChunks: [], webSearchQueries: [] } }],
+    });
+
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 'first hit persistence override', inputType: 'SMS_TEXT', language: 'en' }, '198.51.100.77'),
+      res
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(mockBlobPut).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let first-time forceRefresh requests bypass Blob admission', async () => {
+    const { default: handler } = await import('../api/analyze');
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 80, sp: 20, v: 'fresh result', cn: 'safe', b: 'bio', d: 'name' }),
+      candidates: [{ groundingMetadata: { groundingChunks: [], webSearchQueries: [] } }],
+    });
+
+    const res = makeRes();
+    await handler(
+      makeReq({
+        input: 'first time forced analysis',
+        inputType: 'SMS_TEXT',
+        language: 'en',
+        forceRefresh: true,
+      }, '198.51.100.78'),
+      res
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(mockBlobHead).toHaveBeenCalledTimes(1);
+    expect(mockBlobPut).not.toHaveBeenCalled();
+    expect(res.headers['X-VerifyFirst-Cache']).toBe('MISS; stored=memory; hits=1');
   });
 });
 

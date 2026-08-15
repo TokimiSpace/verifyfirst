@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyError, computeDegradation, isPrivateHostname, isBareDomain, maskPII } from '../api/analyze';
+import { canonicalizeCacheInput, classifyError, computeDegradation, isPrivateHostname, isBareDomain, maskPII } from '../api/analyze';
 
 describe('classifyError', () => {
   it('classifies Gemini error.status=429 as LLM_QUOTA/503', () => {
@@ -200,5 +200,24 @@ describe('maskPII', () => {
     for (const s of ['Deadline: 2026-08-01', 'Headline: BREAKING today', 'Available online: yes']) {
       expect(maskPII(s)).toBe(s);
     }
+  });
+});
+
+describe('canonicalizeCacheInput', () => {
+  it('normalizes guaranteed-equivalent URL syntax', () => {
+    expect(canonicalizeCacheInput(
+      'https://Example.com:443/pay?b=2&a=1#details',
+      'URL',
+    )).toBe('https://example.com/pay?b=2&a=1#details');
+  });
+
+  it('preserves query order, tracking values, and fragments as security signals', () => {
+    expect(canonicalizeCacheInput('https://example.com/pay?utm_source=x&b=2&a=1#step', 'URL'))
+      .toBe('https://example.com/pay?utm_source=x&b=2&a=1#step');
+  });
+
+  it('preserves message whitespace and Unicode width', () => {
+    expect(canonicalizeCacheInput('  匯款  10,000 元\n到帳號 123  ', 'SMS_TEXT'))
+      .toBe('匯款  10,000 元\n到帳號 123');
   });
 });
