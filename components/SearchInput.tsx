@@ -13,11 +13,11 @@ interface SearchInputProps {
 
 const TRANSLATIONS = {
   en: {
-    placeholder: 'Paste a suspicious link or message...',
+    placeholder: 'Paste a link, message, phone, or account...',
     placeholderSenior: 'Paste a suspicious LINE message, ad, short link, phone number, or account here...',
     scanning: 'Scanning...',
     scanningSenior: 'Checking...',
-    audit: 'Check',
+    audit: 'Sandbox it',
     auditSenior: 'Is This Safe?',
     detected: {
       URL: 'Link',
@@ -26,7 +26,7 @@ const TRANSLATIONS = {
       HANDLE: 'Account',
     },
     detectedLabel: 'Detected:',
-    scenarioHint: 'Example scam patterns (key words redacted with xxxxx) — click any card to see the analysis:',
+    scenarioHint: 'Not sure what to try? Use a demo case:',
     uploadImage: 'Upload Screenshot',
     uploadTxt: 'Upload .txt file',
     imageReady: 'Screenshot ready — click Check to analyze',
@@ -38,11 +38,11 @@ const TRANSLATIONS = {
     ocrFailed: 'Could not read text — please type it manually',
   },
   'zh-TW': {
-    placeholder: '貼上可疑訊息、廣告、短網址、電話或帳號...',
+    placeholder: '貼上連結、訊息、電話或帳號...',
     placeholderSenior: '把可疑的 LINE 訊息、廣告、短網址、電話或帳號貼在這裡...',
     scanning: '掃描中...',
     scanningSenior: '檢查中...',
-    audit: '檢查',
+    audit: '丟進沙盒',
     auditSenior: '這安全嗎？',
     detected: {
       URL: '網址',
@@ -51,7 +51,7 @@ const TRANSLATIONS = {
       HANDLE: '帳號',
     },
     detectedLabel: '偵測到：',
-    scenarioHint: '詐騙範例（關鍵字以 xxxxx 遮蔽）— 點擊任一卡片查看分析：',
+    scenarioHint: '不知道貼什麼？直接試一個 Demo：',
     uploadImage: '上傳截圖',
     uploadTxt: '上傳 .txt 文字檔',
     imageReady: '截圖已就緒，點擊「檢查」開始分析',
@@ -63,11 +63,11 @@ const TRANSLATIONS = {
     ocrFailed: '無法辨識文字，請手動輸入',
   },
   vi: {
-    placeholder: 'Dán nội dung đáng ngờ, quảng cáo, liên kết ngắn, số điện thoại hoặc tài khoản...',
+    placeholder: 'Dán liên kết, tin nhắn, số điện thoại hoặc tài khoản...',
     placeholderSenior: 'Dán tin nhắn LINE, quảng cáo, liên kết ngắn, số điện thoại hoặc tài khoản đáng ngờ vào đây...',
     scanning: 'Đang quét...',
     scanningSenior: 'Đang kiểm tra...',
-    audit: 'Kiểm tra',
+    audit: 'Cho vào hộp cát',
     auditSenior: 'Có an toàn không?',
     detected: {
       URL: 'Liên kết',
@@ -76,7 +76,7 @@ const TRANSLATIONS = {
       HANDLE: 'Tài khoản',
     },
     detectedLabel: 'Phát hiện:',
-    scenarioHint: 'Mẫu lừa đảo ví dụ (từ khóa đã được che bằng xxxxx) — nhấp vào thẻ bất kỳ để xem phân tích:',
+    scenarioHint: 'Chưa biết thử gì? Chọn một trường hợp demo:',
     uploadImage: 'Tải ảnh chụp màn hình',
     uploadTxt: 'Tải file .txt',
     imageReady: 'Ảnh chụp màn hình đã sẵn sàng — nhấn Kiểm tra để phân tích',
@@ -353,9 +353,9 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
         <div className="vf-console-head">
           <div className="vf-console-label">
             <span className="vf-live-dot" aria-hidden="true" />
-            <span>{language === 'zh-TW' ? '建立新的安全查核' : language === 'vi' ? 'Tạo kiểm tra an toàn mới' : 'Start a new safety check'}</span>
+            <span>{language === 'zh-TW' ? '把內容放進沙盒' : language === 'vi' ? 'Cho nội dung vào hộp cát' : 'Put content in the sandbox'}</span>
           </div>
-          <span className="vf-console-meta">Read-only sandbox</span>
+          <span className="vf-console-meta">Content isolation</span>
         </div>
 
         <div className="vf-console-body">

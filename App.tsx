@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Analytics } from '@vercel/analytics/react';
-import { TruthGuardAnalysis, LoadingState, Language, InputType } from './types';
+import { AgentGrant, TruthGuardAnalysis, LoadingState, Language, InputType, TrustTimelineEvent } from './types';
 import { analyzeTruthGuard, APIError } from './services/geminiService';
 import SearchInput from './components/SearchInput';
 import TrustMeter from './components/TrustMeter';
@@ -20,23 +20,25 @@ import PrimaryActions from './components/PrimaryActions';
 import AgentFindings from './components/AgentFindings';
 import CofactsFindings from './components/CofactsFindings';
 import ReportModal from './components/ReportModal';
-import { ShieldAlert, Search, Globe, CheckCircle2, AlertTriangle, Sparkles, ExternalLink, Accessibility, ChevronDown, ThumbsUp, ThumbsDown, RotateCcw, ArrowLeft, LockKeyhole } from 'lucide-react';
+import AgentSandbox from './components/AgentSandbox';
+import SandboxControl from './components/SandboxControl';
+import { ShieldAlert, Search, Globe, CheckCircle2, AlertTriangle, Sparkles, ExternalLink, Accessibility, ChevronDown, ThumbsUp, ThumbsDown, RotateCcw, ArrowLeft, LockKeyhole, Boxes, SlidersHorizontal } from 'lucide-react';
 
 // UI Text dictionary for all static text
 const UI_TEXT = {
   en: {
     appName: 'VerifyFirst',
-    appNameHighlight: ' AI',
+    appNameHighlight: ' Sandbox',
     poweredBy: 'Powered by tokimi & Gemini',
     seniorMode: 'Senior Mode',
     seniorModeOn: '👴 Senior Mode ON',
     seniorModeOff: '👴 Senior Mode',
     seniorModeDesc: 'Larger text · Simpler results',
     hero: {
-      title: 'Verify First,',
-      titleHighlight: 'Trust Later',
-      subtitle: 'First-step safety verification engine',
-      description: 'Paste suspicious content here. We verify where it leads, what it asks you to do, what the risk is, and what the safest next step should be.',
+      title: 'Not sure?',
+      titleHighlight: 'Sandbox it first.',
+      subtitle: 'Safety gateway for people and Agents',
+      description: 'One safe place for suspicious links, messages, identities, and Agent actions. We inspect first, then let you continue, confirm, or stop.',
       descriptionSenior: 'Paste the suspicious message, ad, short link, phone number, or account here first.'
     },
     loading: {
@@ -111,17 +113,17 @@ const UI_TEXT = {
   },
   'zh-TW': {
     appName: 'VerifyFirst',
-    appNameHighlight: ' AI',
+    appNameHighlight: ' Sandbox',
     poweredBy: '由 tokimi 及 Gemini 提供支援',
     seniorMode: '長輩模式',
     seniorModeOn: '👴 長輩模式 開啟中',
     seniorModeOff: '👴 長輩模式',
     seniorModeDesc: '大字版・適合長者使用',
     hero: {
-      title: '先驗證，',
-      titleHighlight: '再相信',
-      subtitle: '第一步安全驗證引擎',
-      description: '把可疑內容貼進來，我們先幫你安全走一遍，告訴你它會把你帶去哪裡、用了什麼手法、風險是什麼、正規入口在哪裡、現在最安全的下一步是什麼。',
+      title: '不確定？',
+      titleHighlight: '先丟進沙盒。',
+      subtitle: '人與 Agent 共用的安全閘門',
+      description: '可疑連結、訊息、身份與 Agent 動作，都從同一個入口先檢查。結果只告訴你三件事：可以繼續、需要你確認，或已經攔下。',
       descriptionSenior: '把可疑訊息、廣告、短網址、電話或帳號先貼進來，我們先幫你驗證。'
     },
     loading: {
@@ -196,17 +198,17 @@ const UI_TEXT = {
   },
   vi: {
     appName: 'VerifyFirst',
-    appNameHighlight: ' AI',
+    appNameHighlight: ' Sandbox',
     poweredBy: 'Được cung cấp bởi tokimi & Gemini',
     seniorMode: 'Chế độ cao tuổi',
     seniorModeOn: '👴 Chế độ cao tuổi BẬT',
     seniorModeOff: '👴 Chế độ cao tuổi',
     seniorModeDesc: 'Chữ lớn · Dành cho người cao tuổi',
     hero: {
-      title: 'Xác minh trước,',
-      titleHighlight: 'Tin tưởng sau',
-      subtitle: 'Công cụ xác minh an toàn bước đầu',
-      description: 'Dán nội dung đáng ngờ vào đây. Hệ thống sẽ kiểm tra nó dẫn bạn đi đâu, dùng thủ thuật gì, rủi ro là gì và bước tiếp theo an toàn nhất.',
+      title: 'Không chắc?',
+      titleHighlight: 'Cho vào hộp cát trước.',
+      subtitle: 'Cổng an toàn chung cho người và Agent',
+      description: 'Liên kết, tin nhắn, danh tính và hành động Agent đáng ngờ đều được kiểm tra tại một nơi. Kết quả chỉ có ba lựa chọn: tiếp tục, cần bạn xác nhận, hoặc đã chặn.',
       descriptionSenior: 'Dán tin nhắn, quảng cáo, liên kết ngắn, số điện thoại hoặc tài khoản đáng ngờ vào đây trước.'
     },
     loading: {
@@ -297,51 +299,86 @@ const LANDING_UI: Record<Language, {
   capabilities: Array<{ title: string; description: string }>;
 }> = {
   'zh-TW': {
-    eyebrow: '台灣第一步安全驗證引擎',
-    boundaryTitle: '只觀察，不替你操作',
-    boundaryBody: '沙盒不登入、不付款、不送出表單，也不會索取密碼或 OTP。',
+    eyebrow: 'VERIFYFIRST TRUST GATEWAY',
+    boundaryTitle: '沙盒先看，政策再放行',
+    boundaryBody: '網址在隔離環境觀察；Agent 的登入、付款、下載與 OTP 動作一律先擋下。',
     seniorTitle: '給長輩使用大字版',
     seniorBody: '更大的字、更短的說明與更直接的下一步。',
     seniorAction: '開啟',
     capabilities: [
-      { title: '安全開啟', description: '在唯讀沙盒中觀察可疑網址' },
-      { title: '追蹤轉址', description: '辨識短網址最後把你帶去哪裡' },
-      { title: '交叉比對', description: '查核安全資料庫與公開證據' },
-      { title: '給出下一步', description: '清楚告訴你停止、驗證或回報' },
+      { title: '內容進沙盒', description: '隔離開啟連結、追蹤轉址與頁面行為' },
+      { title: '身份有依據', description: '比對官方資料、工具來源與 IFF 證據' },
+      { title: '動作過濾', description: 'Agent 執行前先核對授權與風險政策' },
+      { title: '決定可追溯', description: '放行、確認、攔截與撤銷全部留下紀錄' },
     ],
   },
   en: {
-    eyebrow: 'First-step safety verification for Taiwan',
-    boundaryTitle: 'We observe. We never act for you.',
-    boundaryBody: 'The sandbox never logs in, pays, submits forms, or asks for passwords and OTP codes.',
+    eyebrow: 'VERIFYFIRST TRUST GATEWAY',
+    boundaryTitle: 'Inspect first. Release by policy.',
+    boundaryBody: 'Links open in isolation. Agent login, payment, download, and OTP actions are stopped at the gate.',
     seniorTitle: 'Switch to Senior Mode',
     seniorBody: 'Larger type, shorter explanations, and clearer next steps.',
     seniorAction: 'Turn on',
     capabilities: [
-      { title: 'Open safely', description: 'Observe suspicious links in a read-only sandbox' },
-      { title: 'Trace redirects', description: 'Reveal where shortened links actually lead' },
-      { title: 'Cross-check', description: 'Compare security databases and public evidence' },
-      { title: 'Choose next step', description: 'Know whether to stop, verify, or report' },
+      { title: 'Isolate content', description: 'Open links safely and trace redirects and behavior' },
+      { title: 'Verify identity', description: 'Check official data, tool sources, and IFF evidence' },
+      { title: 'Filter actions', description: 'Check Agent authorization and policy before execution' },
+      { title: 'Trace decisions', description: 'Log release, confirmation, denial, and revocation' },
     ],
   },
   vi: {
-    eyebrow: 'Xác minh an toàn bước đầu tại Đài Loan',
-    boundaryTitle: 'Chỉ quan sát, không thao tác thay bạn',
-    boundaryBody: 'Hộp cát không đăng nhập, thanh toán, gửi biểu mẫu hoặc yêu cầu mật khẩu và OTP.',
+    eyebrow: 'VERIFYFIRST TRUST GATEWAY',
+    boundaryTitle: 'Kiểm tra trước. Chỉ cho phép theo chính sách.',
+    boundaryBody: 'Liên kết mở trong môi trường cách ly. Đăng nhập, thanh toán, tải ứng dụng và OTP của Agent bị chặn tại cổng.',
     seniorTitle: 'Bật chế độ chữ lớn',
     seniorBody: 'Chữ lớn hơn, giải thích ngắn hơn và bước tiếp theo rõ ràng hơn.',
     seniorAction: 'Bật',
     capabilities: [
-      { title: 'Mở an toàn', description: 'Quan sát liên kết trong hộp cát chỉ đọc' },
-      { title: 'Theo dõi chuyển hướng', description: 'Xem liên kết rút gọn thực sự dẫn đi đâu' },
-      { title: 'Đối chiếu', description: 'Kiểm tra cơ sở dữ liệu và bằng chứng công khai' },
-      { title: 'Chọn bước tiếp theo', description: 'Biết lúc nào nên dừng, xác minh hoặc báo cáo' },
+      { title: 'Cách ly nội dung', description: 'Mở liên kết an toàn, theo dõi chuyển hướng và hành vi' },
+      { title: 'Xác minh danh tính', description: 'Kiểm tra dữ liệu chính thức, nguồn công cụ và bằng chứng IFF' },
+      { title: 'Lọc hành động', description: 'Kiểm tra ủy quyền và chính sách trước khi Agent chạy' },
+      { title: 'Theo dõi quyết định', description: 'Ghi lại cho phép, xác nhận, từ chối và thu hồi' },
     ],
   },
 };
 
+type AppView = 'SANDBOX' | 'CONTROL';
+
+const createDemoGrant = (): AgentGrant => {
+  const issuedAt = new Date();
+  const expiresAt = new Date(issuedAt.getTime() + 24 * 60 * 60 * 1000);
+  return {
+    id: 'grant_worker_safe_demo',
+    agentId: 'agent_worker_assist_v1',
+    agentName: '安心工作 Agent',
+    agentPurpose: '查驗雇主、仲介與徵才資訊',
+    userName: 'Nguyễn An',
+    status: 'ACTIVE',
+    issuedAt: issuedAt.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+    allowedActions: ['OBSERVE_URL', 'CHECK_IDENTITY', 'READ_PUBLIC_DATA'],
+    confirmationActions: ['SUBMIT_PERSONAL_DATA'],
+    deniedActions: ['LOGIN', 'PAYMENT', 'REQUEST_OTP', 'DOWNLOAD_APP'],
+  };
+};
+
+const initialTimeline = (grant: AgentGrant): TrustTimelineEvent[] => [{
+  id: 'evt_grant_issued',
+  at: grant.issuedAt,
+  actor: grant.userName,
+  action: 'GRANT_ISSUED',
+  target: grant.agentName,
+  decision: 'INFO',
+  detail: '24-hour limited authorization',
+  evidenceId: 'sha256:72f4390e8bf8d9f4',
+}];
+
 const App: React.FC = () => {
+  const initialGrantRef = useRef<AgentGrant>(createDemoGrant());
   const [language, setLanguage] = useState<Language>('zh-TW');
+  const [view, setView] = useState<AppView>('SANDBOX');
+  const [grant, setGrant] = useState<AgentGrant>(initialGrantRef.current);
+  const [trustTimeline, setTrustTimeline] = useState<TrustTimelineEvent[]>(() => initialTimeline(initialGrantRef.current));
   const [loadingState, setLoadingState] = useState<LoadingState>('IDLE');
   const [analysis, setAnalysis] = useState<TruthGuardAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -354,6 +391,35 @@ const App: React.FC = () => {
   const [searchInputKey, setSearchInputKey] = useState(0);
   const langMenuRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
+
+  const appendTimeline = useCallback((event: TrustTimelineEvent) => {
+    setTrustTimeline(current => [event, ...current].slice(0, 20));
+  }, []);
+
+  const revokeGrant = useCallback(() => {
+    setGrant(current => ({ ...current, status: 'REVOKED' }));
+    const now = new Date().toISOString();
+    appendTimeline({
+      id: `evt_revoke_${Date.now().toString(36)}`,
+      at: now,
+      actor: grant.userName,
+      action: 'GRANT_REVOKED',
+      target: grant.agentName,
+      decision: 'DENY',
+      detail: 'Authorization revoked by user',
+      evidenceId: `sha256:revoked_${Date.now().toString(36)}`,
+    });
+  }, [appendTimeline, grant.agentName, grant.userName]);
+
+  const resetGrant = useCallback(() => {
+    const next = createDemoGrant();
+    setGrant(next);
+    setTrustTimeline(initialTimeline(next));
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -487,17 +553,28 @@ const App: React.FC = () => {
       {/* Header */}
       <header className="vf-header">
         <div className={`vf-container vf-header-inner ${isSeniorMode ? 'min-h-[76px]' : ''}`}>
-          <a href="/" className="vf-brand">
+          <a href="/" className="vf-brand" onClick={(event) => { event.preventDefault(); setView('SANDBOX'); handleReset(); }}>
             <span className="vf-brand-mark">
-              <ShieldAlert className={isSeniorMode ? 'w-6 h-6' : 'w-[18px] h-[18px]'} />
+              <Boxes className={isSeniorMode ? 'w-6 h-6' : 'w-[18px] h-[18px]'} />
             </span>
             <span className="vf-brand-copy">
               <span className={`vf-brand-name ${isSeniorMode ? 'text-xl' : ''}`}>
                 {t.appName}<span className="text-crypto-accent">{t.appNameHighlight}</span>
               </span>
-              <span className="vf-brand-subtitle">Safety verification desk</span>
+              <span className="vf-brand-subtitle">Trust gateway for people + agents</span>
             </span>
           </a>
+          <nav className="vf-product-nav" aria-label="Product">
+            <button className={view === 'SANDBOX' ? 'is-active' : ''} onClick={() => setView('SANDBOX')}>
+              <Boxes size={14} />
+              {language === 'zh-TW' ? '安全查核' : language === 'vi' ? 'Kiểm tra' : 'Safety check'}
+            </button>
+            <button className={view === 'CONTROL' ? 'is-active' : ''} onClick={() => setView('CONTROL')}>
+              <SlidersHorizontal size={14} />
+              {language === 'zh-TW' ? '我的沙盒' : language === 'vi' ? 'Hộp cát của tôi' : 'My sandbox'}
+              <span className={grant.status === 'ACTIVE' ? 'is-live' : 'is-off'}>{grant.status === 'ACTIVE' ? '1' : '0'}</span>
+            </button>
+          </nav>
           <div className="vf-header-actions">
             {/* Senior Mode Toggle */}
             <button
@@ -542,6 +619,16 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Content */}
+      {view === 'CONTROL' ? (
+        <SandboxControl
+          language={language}
+          grant={grant}
+          timeline={trustTimeline}
+          onBack={() => setView('SANDBOX')}
+          onRevoke={revokeGrant}
+          onResetGrant={resetGrant}
+        />
+      ) : (
       <main className="vf-container vf-main">
         {!analysis && loadingState === 'IDLE' && (
           <section className="vf-hero">
@@ -571,13 +658,26 @@ const App: React.FC = () => {
               )}
             </div>
 
-            <SearchInput
-              key={searchInputKey}
-              onSearch={handleSearch}
-              isLoading={false}
-              language={language}
-              isSeniorMode={isSeniorMode}
-            />
+            <div className="vf-sandbox-stack">
+              <div className="vf-inspection-tray" aria-hidden="true">
+                <span>INPUT</span><i /><span>ISOLATE</span><i /><span>DECIDE</span>
+              </div>
+              <SearchInput
+                key={searchInputKey}
+                onSearch={handleSearch}
+                isLoading={false}
+                language={language}
+                isSeniorMode={isSeniorMode}
+              />
+              {!isSeniorMode && (
+                <AgentSandbox
+                  language={language}
+                  grant={grant}
+                  onOpenControl={() => setView('CONTROL')}
+                  onTimelineEvent={appendTimeline}
+                />
+              )}
+            </div>
 
             {!isSeniorMode && (
               <div className="vf-capability-rail" aria-label="Verification process">
@@ -910,10 +1010,11 @@ const App: React.FC = () => {
           </div>
         )}
       </main>
+      )}
 
       {/* Sticky "Check Another" — mobile fab */}
       {analysis && (
-        <div className="fixed bottom-6 right-6 z-40 md:hidden">
+        <div className="vf-mobile-reset fixed bottom-6 right-6 z-40 md:hidden">
           <button
             onClick={handleReset}
             className="vf-submit px-5 py-3 rounded-full shadow-lg font-bold flex items-center gap-2"

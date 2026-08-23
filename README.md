@@ -1,10 +1,13 @@
-# VerifyFirst AI (verify1st.tw)
+# VerifyFirst Sandbox (verify1st.tw)
 
-First-step scam verification engine for Taiwan. Paste a suspicious message,
-link, or phone number — VerifyFirst safely walks the content for you (redirect
-chains, page observation, blocklists, community fact-checks), then explains in
-plain language what it is, what it asks you to do, and what the safest next
-step is. Built for everyday users, with a dedicated large-text Senior Mode.
+A shared safety gateway for people and AI Agents. Suspicious messages, links,
+identities, and Agent actions enter one sandbox before anything consequential
+happens. The interface returns one of three human-readable decisions: continue,
+confirm, or stop.
+
+The consumer verification tool remains intact. A deterministic Agent Filter
+now adds identity, scoped authorization, high-risk action interception, human
+confirmation, revocation, and a Trust Timeline for enterprise workflows.
 
 Live at **[verify1st.tw](https://verify1st.tw)**.
 
@@ -16,6 +19,17 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
   ScamSniffer crypto-phishing blocklist, VirusTotal, DNS resolution
 - **Agent sandbox** — server-side page observation: follows redirect chains
   (HTTP + meta-refresh/JS), detects login/OTP/payment/APK-download asks
+- **Agent Filter** — deterministic authorization policy runs before model or
+  tool execution; read-only checks can pass, personal-data submission requires
+  confirmation, and login/payment/OTP/download actions are denied
+- **Revocable authorization** — a visible control surface shows which Agent is
+  acting for whom, its purpose, expiry, allowed scope, and forbidden scope
+- **Trust Timeline** — records grants, policy decisions, user confirmation,
+  denial, and revocation with evidence identifiers
+- **Migrant-worker demo** — Traditional Chinese, English, and Vietnamese flow
+  for verifying recruiters without exposing residency data
+- **IFF evidence layer** — presents [ifandonlyif.io](https://ifandonlyif.io) as
+  the verifiable evidence layer while keeping protocol detail out of the main UX
 - **Hard blocklist floors** — confirmed Safe Browsing/ScamSniffer/VirusTotal
   hits clamp the verdict in code; the LLM cannot be talked out of them
 - **Cofacts integration** — crowd-sourced Taiwanese fact-check reports
@@ -46,6 +60,20 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
 6. The result enters a bounded memory cache immediately; only entries requested
    twice are promoted to the shared 72-hour Blob cache, avoiding writes for
    one-off messages
+
+## How the Agent Filter Works
+
+1. Resolve the Agent identity and the user it represents
+2. Reject a mismatched, expired, or revoked grant before any tool runs
+3. Compare the requested action with the grant's allow / confirm / deny lists
+4. Keep URL observation and public-data checks read-only inside the sandbox
+5. Require a human before any personal data can be submitted
+6. Log the decision and evidence identifier in the Trust Timeline
+
+The policy gate is deterministic by design: model output can explain a risk,
+but it cannot expand permissions or override a denial. The browser demo includes
+a reset control so judges can replay the full grant → confirm → revoke → denied
+sequence without external accounts.
 
 ## Getting Started
 
@@ -132,6 +160,7 @@ verify1st/
 │   └── safe-domains.ts       # Self/known-safe allowlist short-circuit
 ├── components/               # React UI (results panels, search, senior mode)
 ├── services/
+│   ├── agentPolicy.ts        # Deterministic Agent authorization gate
 │   └── geminiService.ts      # Frontend client for /api/analyze
 ├── tests/                    # Vitest unit + handler integration tests
 ├── public/

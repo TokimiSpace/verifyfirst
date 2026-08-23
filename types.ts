@@ -231,3 +231,59 @@ export interface CofactsResult {
   totalMatches: number;
   articles: CofactsArticle[];
 }
+
+// ========== VerifyFirst Sandbox — trusted Agent controls ==========
+
+export type AgentGrantStatus = 'ACTIVE' | 'EXPIRED' | 'REVOKED';
+export type AgentDecision = 'ALLOW' | 'REQUIRE_CONFIRMATION' | 'DENY';
+export type AgentActionKind =
+  | 'OBSERVE_URL'
+  | 'CHECK_IDENTITY'
+  | 'READ_PUBLIC_DATA'
+  | 'SUBMIT_PERSONAL_DATA'
+  | 'LOGIN'
+  | 'PAYMENT'
+  | 'REQUEST_OTP'
+  | 'DOWNLOAD_APP';
+
+export interface AgentGrant {
+  id: string;
+  agentId: string;
+  agentName: string;
+  agentPurpose: string;
+  userName: string;
+  status: AgentGrantStatus;
+  issuedAt: string;
+  expiresAt: string;
+  allowedActions: AgentActionKind[];
+  confirmationActions: AgentActionKind[];
+  deniedActions: AgentActionKind[];
+}
+
+export interface AgentActionRequest {
+  id: string;
+  grantId: string;
+  action: AgentActionKind;
+  target: string;
+  purpose: string;
+  dataFields?: string[];
+}
+
+export interface AgentPolicyResult {
+  decision: AgentDecision;
+  reasonCode: string;
+  reason: string;
+  matchedRule: string;
+  evaluatedAt: string;
+}
+
+export interface TrustTimelineEvent {
+  id: string;
+  at: string;
+  actor: string;
+  action: string;
+  target?: string;
+  decision: AgentDecision | 'INFO';
+  detail: string;
+  evidenceId: string;
+}
