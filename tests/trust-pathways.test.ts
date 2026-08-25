@@ -17,4 +17,11 @@ describe('Trust Pathways standalone demo', () => {
   it('states that the demo uses synthetic data', () => {
     expect(page).toContain('所有案例均為合成資料');
   });
+
+  it('provides a replayable 90-second judge journey with a fail-closed ending', () => {
+    expect(page).toContain('90 秒評審模式');
+    expect(page).toContain("at:78,chapter:'06 · FAIL CLOSED'");
+    expect(page).toContain('tool_execution=false');
+    expect(page).toContain("$('#pauseJudge').onclick");
+  });
 });
