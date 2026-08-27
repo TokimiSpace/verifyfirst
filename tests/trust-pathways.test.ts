@@ -19,7 +19,11 @@ describe('Trust Pathways standalone demo', () => {
   });
 
   it('provides a replayable 90-second judge journey with a fail-closed ending', () => {
-    expect(page).toContain('90 秒評審模式');
+    expect(page).toContain('觀看 90 秒解決方案');
+    expect(page).toContain('預計 1 分 30 秒');
+    expect(page).toContain('1 限定授權');
+    expect(page).toContain('4 撤銷拒絕');
+    expect(page).toContain('grid-template-columns:repeat(7,1fr)');
     expect(page).toContain("at:42,chapter:'04 · PAYMENT RISK'");
     expect(page).toContain("at:82,chapter:'07 · FAIL CLOSED'");
     expect(page).toContain('tool_execution=false');
