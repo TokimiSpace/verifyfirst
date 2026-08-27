@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const page = fs.readFileSync(path.resolve('public/trust-pathways/index.html'), 'utf8');
+const verifierDockerfile = fs.readFileSync(path.resolve('services/vlei-verifier/Dockerfile.vercel'), 'utf8');
+const verifierConfig = fs.readFileSync(path.resolve('services/vlei-verifier/verifyfirst-production.json'), 'utf8');
 
 describe('Trust Pathways standalone demo', () => {
   it('keeps all five pain-point pathways', () => {
@@ -51,8 +53,28 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('schema/acdc/legal-entity-vLEI-credential.json');
     expect(page).toContain('function extractCesrAcdcs(stream)');
     expect(page).toContain('BROWSER_STRUCTURE_AND_LINKAGE');
-    expect(page).toContain('KERI CRYPTO · BACKEND REQUIRED');
-    expect(page).toContain('POST /presentations/{said} → GET /authorizations/{aid}');
+    expect(page).toContain('KERI CRYPTO · LIVE BACKEND');
+    expect(page).toContain('PUT /presentations/{said} → GET /authorizations/{aid}');
+  });
+
+  it('connects the UI to the deployed fail-closed keripy verifier', () => {
+    expect(page).toContain("base:'https://verifyfirst-vlei-verifier.vercel.app'");
+    expect(page).toContain("method:'PUT'");
+    expect(page).toContain("'Content-Type':'application/json+cesr'");
+    expect(page).toContain('/authorizations/${VLEI_BACKEND.holderAid}');
+    expect(page).toContain("state.textContent='INVALID'");
+    expect(page).toContain("state.textContent='FAIL CLOSED'");
+    expect(page).toContain('BACKEND_TIMEOUT');
+  });
+
+  it('pins and hardens the deployable GLEIF verifier container', () => {
+    expect(verifierDockerfile).toContain('5850051b52dce24ed59eae486af76e7c73f6012c');
+    expect(verifierDockerfile).toContain('ENTRYPOINT ["/keripy/venv/bin/verifier"');
+    expect(verifierDockerfile).toContain('VERIFY_ROOT_OF_TRUST=True');
+    expect(verifierDockerfile).toContain('VERIFIER_ENV=production');
+    expect(verifierDockerfile).toContain('DEV_ONLY_ENDPOINTS=^/root_of_trust');
+    expect(verifierConfig).toContain('"revocationCheck": true');
+    expect(verifierConfig).toContain('"witnessUrlAllowlist"');
   });
 
   it('queries the live GLEIF LEI Search API and fails closed', () => {

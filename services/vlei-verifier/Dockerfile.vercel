@@ -1,0 +1,37 @@
+FROM weboftrust/keri:1.2.0-rc4
+
+ARG VLEI_VERIFIER_COMMIT=5850051b52dce24ed59eae486af76e7c73f6012c
+
+ADD https://github.com/GLEIF-IT/vlei-verifier/archive/${VLEI_VERIFIER_COMMIT}.tar.gz /tmp/vlei-verifier.tar.gz
+
+WORKDIR /app
+
+RUN mkdir -p /app /tmp/verifyfirst \
+    && python -c "import tarfile; tarfile.open('/tmp/vlei-verifier.tar.gz').extractall('/tmp/vlei-verifier')" \
+    && cp -R /tmp/vlei-verifier/vlei-verifier-${VLEI_VERIFIER_COMMIT}/. /app/ \
+    && pip install --no-cache-dir -r requirements.txt \
+    && rm -rf /tmp/vlei-verifier /tmp/vlei-verifier.tar.gz
+
+COPY patches/0001-parse-http-port-as-integer.patch /tmp/0001-parse-http-port-as-integer.patch
+
+RUN patch -p1 < /tmp/0001-parse-http-port-as-integer.patch \
+    && rm /tmp/0001-parse-http-port-as-integer.patch
+
+RUN command -v verifier \
+    && verifier server start --help
+
+COPY verifyfirst-production.json /app/scripts/keri/cf/verifyfirst-production.json
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONIOENCODING=UTF-8 \
+    PORT=80 \
+    VERIFIER_CONFIG_FILE=verifyfirst-production.json \
+    VERIFY_ROOT_OF_TRUST=True \
+    VERIFIER_MODE=test \
+    VERIFIER_ENV=production \
+    DEV_ONLY_ENDPOINTS=^/root_of_trust \
+    VERIFIER_LOG_RESPONSE_BODIES=false
+
+EXPOSE 80
+
+ENTRYPOINT ["/keripy/venv/bin/verifier", "server", "start", "--http", "80", "--config-dir", "/app/scripts", "--config-file", "verifyfirst-production.json"]
