@@ -1,0 +1,10 @@
+diff --git a/src/verifier/app/cli/commands/server/start.py b/src/verifier/app/cli/commands/server/start.py
+index 17f60aa..879bf45 100644
+--- a/src/verifier/app/cli/commands/server/start.py
++++ b/src/verifier/app/cli/commands/server/start.py
+@@ -28,6 +28,7 @@ parser.set_defaults(handler=lambda args: launch(args),
+ parser.add_argument('-p', '--http',
+                     action='store',
++                    type=int,
+                     default=7676,
+                     help="Port on which to listen for verification requests")
