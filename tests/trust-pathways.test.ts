@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import vm from 'node:vm';
 
 const page = fs.readFileSync(path.resolve('public/trust-pathways/index.html'), 'utf8');
 const verifierDockerfile = fs.readFileSync(path.resolve('services/vlei-verifier/Dockerfile.vercel'), 'utf8');
@@ -65,6 +67,49 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain("state.textContent='INVALID'");
     expect(page).toContain("state.textContent='FAIL CLOSED'");
     expect(page).toContain('BACKEND_TIMEOUT');
+  });
+
+  it('separates the replayable training trust domain from production', () => {
+    expect(page).toContain('Training Sandbox · 可重播');
+    expect(page).toContain('Production Verifier · GLEIF Root');
+    expect(page).toContain('TRAINING ONLY');
+    expect(page).toContain('Production 模式不會以 Training 根金鑰產生 VALID');
+    expect(page).toContain("selectVerifierMode('training')");
+    expect(page).toContain("verifierMode=mode==='production'?'production':'training'");
+  });
+
+  it('cryptographically verifies valid, tampered, and revoked training fixtures', () => {
+    const match = page.match(/const TRAINING_FIXTURE=(\{[\s\S]*?\n    \});/);
+    expect(match).not.toBeNull();
+    const fixture = vm.runInNewContext(`(${match![1]})`);
+    const canonicalize = (value: unknown): string => {
+      if (value === null || typeof value !== 'object') return JSON.stringify(value);
+      if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`;
+      const record = value as Record<string, unknown>;
+      return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${canonicalize(record[key])}`).join(',')}}`;
+    };
+    const publicKey = crypto.createPublicKey({
+      key: Buffer.from(fixture.publicKeySpki, 'base64url'),
+      format: 'der',
+      type: 'spki',
+    });
+    const verify = (value: unknown, signature: string) => crypto.verify(
+      null,
+      Buffer.from(canonicalize(value)),
+      publicKey,
+      Buffer.from(signature, 'base64url'),
+    );
+    const fingerprint = `sha256-${crypto.createHash('sha256').update(Buffer.from(fixture.publicKeySpki, 'base64url')).digest('base64url')}`;
+    const tampered = { ...fixture.payload, role: 'Treasury Admin · TAMPERED' };
+
+    expect(fingerprint).toBe(fixture.rootFingerprint);
+    expect(verify(fixture.payload, fixture.credentialSignature)).toBe(true);
+    expect(verify(tampered, fixture.credentialSignature)).toBe(false);
+    expect(verify(fixture.issuedEvent, fixture.issuedSignature)).toBe(true);
+    expect(verify(fixture.revokedEvent, fixture.revokedSignature)).toBe(true);
+    expect(page).toContain("policy='DENY_CREDENTIAL_REVOKED'");
+    expect(page).toContain("policy='ALLOW_TRAINING_ONLY'");
+    expect(page).toContain("policy='DENY_SIGNATURE_INVALID'");
   });
 
   it('pins and hardens the deployable GLEIF verifier container', () => {
