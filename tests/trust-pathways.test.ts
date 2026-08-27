@@ -21,13 +21,28 @@ describe('Trust Pathways standalone demo', () => {
   it('provides a replayable 90-second judge journey with a fail-closed ending', () => {
     expect(page).toContain('觀看 90 秒解決方案');
     expect(page).toContain('預計 1 分 30 秒');
-    expect(page).toContain('1 限定授權');
+    expect(page).toContain('1 vLEI 授權');
     expect(page).toContain('4 撤銷拒絕');
-    expect(page).toContain('grid-template-columns:repeat(7,1fr)');
-    expect(page).toContain("at:42,chapter:'04 · PAYMENT RISK'");
-    expect(page).toContain("at:82,chapter:'07 · FAIL CLOSED'");
+    expect(page).toContain('grid-template-columns:repeat(8,1fr)');
+    expect(page).toContain("at:10,chapter:'02 · GLEIF vLEI TRUST CHAIN'");
+    expect(page).toContain("at:46,chapter:'05 · PAYMENT RISK'");
+    expect(page).toContain("at:83,chapter:'08 · FAIL CLOSED'");
     expect(page).toContain('tool_execution=false');
     expect(page).toContain("$('#pauseJudge').onclick");
+  });
+
+  it('grounds the manufacturing trust chain in official GLEIF vLEI governance', () => {
+    expect(page).toContain('GLEIF OFFICIAL MODEL · EGF 4.0 · 2026-03-25');
+    expect(page).toContain('GLEIF Root AID');
+    expect(page).toContain('Legal Entity vLEI');
+    expect(page).toContain('OOR／ECR');
+    expect(page).toContain('QVI Credential');
+    expect(page).toContain('Authorization Credential');
+    expect(page).toContain('KERI + ACDC + 可驗證狀態');
+    expect(page).toContain('宏岳精密與畫面中的驗證結果不代表真實 GLEIF');
+    expect(page).toContain('https://www.gleif.org/en/organizational-identity/introducing-the-verifiable-lei-vlei');
+    expect(page).toContain('https://github.com/GLEIF-IT/vlei-trainings/tree/main/markdown');
+    expect(page).toContain('function verifyVleiTrust()');
   });
 
   it('maps every judge scene to observable scoring evidence', () => {
