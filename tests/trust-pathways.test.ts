@@ -20,7 +20,8 @@ describe('Trust Pathways standalone demo', () => {
 
   it('provides a replayable 90-second judge journey with a fail-closed ending', () => {
     expect(page).toContain('90 秒評審模式');
-    expect(page).toContain("at:78,chapter:'06 · FAIL CLOSED'");
+    expect(page).toContain("at:42,chapter:'04 · PAYMENT RISK'");
+    expect(page).toContain("at:82,chapter:'07 · FAIL CLOSED'");
     expect(page).toContain('tool_execution=false');
     expect(page).toContain("$('#pauseJudge').onclick");
   });
@@ -30,5 +31,22 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('HOLD_HIGH_RISK_TRANSFER');
     expect(page).toContain('transaction_broadcast=false');
     expect(page).toContain('替本人簽名或廣播資產交易');
+  });
+
+  it('supports low, medium, and high versioned risk fixtures', () => {
+    ['low:{', 'medium:{', 'high:{'].forEach(level => expect(page).toContain(level));
+    expect(page).toContain("source:'TEST_FIXTURE_V1.0'");
+  });
+
+  it('queries the public GoPlus address risk endpoint with local validation', () => {
+    expect(page).toContain('https://api.gopluslabs.io/api/v1/address_security/');
+    expect(page).toContain("/^0x[a-fA-F0-9]{40}$/.test(address)");
+    expect(page).toContain('FIXTURE FALLBACK');
+  });
+
+  it('exports a transparent, minimal-disclosure evidence packet', () => {
+    expect(page).toContain('verifyfirst.payment-risk-evidence.v1');
+    expect(page).toContain("cryptographic_seal:'NOT_IMPLEMENTED_IN_DEMO'");
+    expect(page).toContain("withheld:['full wallet balance'");
   });
 });
