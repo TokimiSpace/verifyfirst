@@ -24,7 +24,7 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('1 vLEI 授權');
     expect(page).toContain('4 撤銷拒絕');
     expect(page).toContain('grid-template-columns:repeat(8,1fr)');
-    expect(page).toContain("at:10,chapter:'02 · GLEIF vLEI TRUST CHAIN'");
+    expect(page).toContain("at:10,chapter:'02 · GLEIF vLEI VERIFIER'");
     expect(page).toContain("at:46,chapter:'05 · PAYMENT RISK'");
     expect(page).toContain("at:83,chapter:'08 · FAIL CLOSED'");
     expect(page).toContain('tool_execution=false');
@@ -43,6 +43,31 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('https://www.gleif.org/en/organizational-identity/introducing-the-verifiable-lei-vlei');
     expect(page).toContain('https://github.com/GLEIF-IT/vlei-trainings/tree/main/markdown');
     expect(page).toContain('function verifyVleiTrust()');
+  });
+
+  it('loads official ACDC JSON, schema, and CESR samples with layered verification', () => {
+    expect(page).toContain('https://raw.githubusercontent.com/WebOfTrust/vLEI/main/samples/acdc/legal-entity-vLEI-credential.json');
+    expect(page).toContain('E4OU1DuxIAtRRscHSSQCO0UIpk3tVc0QHaNBDUmpHKac-acdc.cesr');
+    expect(page).toContain('schema/acdc/legal-entity-vLEI-credential.json');
+    expect(page).toContain('function extractCesrAcdcs(stream)');
+    expect(page).toContain('BROWSER_STRUCTURE_AND_LINKAGE');
+    expect(page).toContain('KERI CRYPTO · BACKEND REQUIRED');
+    expect(page).toContain('POST /presentations/{said} → GET /authorizations/{aid}');
+  });
+
+  it('queries the live GLEIF LEI Search API and fails closed', () => {
+    expect(page).toContain('https://api.gleif.org/api/v1/lei-records/');
+    expect(page).toContain('/^[A-Z0-9]{20}$/.test(lei)');
+    expect(page).toContain("headers:{Accept:'application/vnd.api+json'}");
+    expect(page).toContain('未使用合成資料替代');
+    expect(page).toContain('506700GE1G29325QX363');
+  });
+
+  it('simulates TEL credential revocation as a fail-closed policy event', () => {
+    expect(page).toContain("renderTelState('REVOKED')");
+    expect(page).toContain('DENY_CREDENTIAL_REVOKED');
+    expect(page).toContain('TEL event · rev');
+    expect(page).toContain('不寫入真實 TEL');
   });
 
   it('maps every judge scene to observable scoring evidence', () => {
