@@ -30,6 +30,15 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain("$('#pauseJudge').onclick");
   });
 
+  it('maps every judge scene to observable scoring evidence', () => {
+    expect(page).toContain('JUDGE SCORE MAP');
+    expect(page).toContain('評分項目對照');
+    expect(page).toContain('Demo 評審映射 · 非主辦單位官方權重');
+    expect(page).toContain("criteria:['問題定義','社會／產業價值']");
+    expect(page).toContain("criteria:['失敗安全','可稽核性']");
+    expect(page).toContain('function updateRubric(scene)');
+  });
+
   it('adds a pre-execution payment fraud checkpoint with user-controlled hold', () => {
     expect(page).toContain('PRE-EXECUTION CHECKPOINT');
     expect(page).toContain('HOLD_HIGH_RISK_TRANSFER');
@@ -48,9 +57,13 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('FIXTURE FALLBACK');
   });
 
-  it('exports a transparent, minimal-disclosure evidence packet', () => {
-    expect(page).toContain('verifyfirst.payment-risk-evidence.v1');
-    expect(page).toContain("cryptographic_seal:'NOT_IMPLEMENTED_IN_DEMO'");
+  it('exports a signed and locally verifiable minimal-disclosure evidence packet', () => {
+    expect(page).toContain('verifyfirst.payment-risk-evidence.v2');
+    expect(page).toContain("algorithm:'ECDSA_P256_SHA256'");
+    expect(page).toContain("crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'}");
+    expect(page).toContain("crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'}");
+    expect(page).toContain("public_key_jwk:publicKey");
+    expect(page).toContain("trust_model:'Integrity proof only; not an organizational identity certificate.'");
     expect(page).toContain("withheld:['full wallet balance'");
   });
 });
