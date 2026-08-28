@@ -75,6 +75,27 @@ but it cannot expand permissions or override a denial. The browser demo includes
 a reset control so judges can replay the full grant → confirm → revoke → denied
 sequence without external accounts.
 
+## Trust Pathways and Update Trust (hackathon demo pages)
+
+Two standalone static pages under `public/` back the Trustworthy AI Hackathon
+2026 submission (no React, no build step, synthetic data only):
+
+- **`/trust-pathways/`** — five pain-point pathways (manufacturing, payment,
+  government, migrant trust, RBA), a replayable 90-second judge tour, the GLEIF
+  vLEI trust-chain explainer, live GLEIF LEI lookup, GoPlus address risk, and a
+  call into the deployed keripy vLEI verifier (`services/vlei-verifier`).
+- **`/update-trust/`** — the vLEI *lifecycle* page. It loads the pinned
+  GLEIF-IT/vlei-verifier regression fixture (GLEIF → QVI → Legal Entity → ECR),
+  recomputes every Blake3 SAID, verifies Ed25519 KEL signatures with WebCrypto,
+  walks ACDC edges with the I2I rule, pins schema SAIDs to GLEIF-IT/vLEI-schema,
+  then issues a *proposed* short-lived Agent Delegation ACDC chained to the real
+  ECR credential and shows how revocation, expiry, tampering and a production
+  root-of-trust policy each flip the decision to a machine-readable `DENY_*`.
+  All verifier logic lives in `public/update-trust/said.js` and is unit-tested
+  against the official BLAKE3 vectors and the fixture (`tests/update-trust.test.ts`).
+  Witness receipts, live key state and duplicity detection are explicitly left
+  to the backend verifier.
+
 ## Getting Started
 
 ### Prerequisites
@@ -164,6 +185,8 @@ verify1st/
 │   └── geminiService.ts      # Frontend client for /api/analyze
 ├── tests/                    # Vitest unit + handler integration tests
 ├── public/
+│   ├── trust-pathways/       # Hackathon demo: five pathways + judge tour + vLEI lab
+│   └── update-trust/         # vLEI lifecycle page: said.js verifier + pinned fixture
 ├── App.tsx
 ├── index.tsx
 ├── types.ts
