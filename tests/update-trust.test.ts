@@ -241,8 +241,8 @@ describe('said.js · chain walk over the official fixture', () => {
 describe('Update Trust standalone page', () => {
   it('ships the pinned official fixture and loads the verifier module', () => {
     expect(page).toContain('<script type="module">');
-    expect(page).toContain("import * as K from './said.js'");
-    expect(page).toContain("local: './credential.cesr'");
+    expect(page).toContain("import * as K from '/update-trust/said.js'");
+    expect(page).toContain("local: '/update-trust/credential.cesr'");
     expect(page).toContain('https://raw.githubusercontent.com/GLEIF-IT/vlei-verifier/5850051b52dce24ed59eae486af76e7c73f6012c/tests/data/credential/credential.cesr');
     expect(page).toContain("ecrSaid: 'EAPHGLJL1s6N4w1Hje5po6JPHu47R9-UoJqLweAci2LV'");
     expect(fixtureText).toContain('EAPHGLJL1s6N4w1Hje5po6JPHu47R9-UoJqLweAci2LV');
