@@ -89,8 +89,11 @@ Two standalone static pages under `public/` back the Trustworthy AI Hackathon
   recomputes every Blake3 SAID, verifies Ed25519 KEL signatures with WebCrypto,
   walks ACDC edges with the I2I rule, pins schema SAIDs to GLEIF-IT/vLEI-schema,
   then issues a *proposed* short-lived Agent Delegation ACDC chained to the real
-  ECR credential and shows how revocation, expiry, tampering and a production
-  root-of-trust policy each flip the decision to a machine-readable `DENY_*`.
+  ECR credential, lets the supplier issue a carbon-footprint credential with
+  ACDC most-compact SAIDs so a presentation can disclose only the carbon block
+  (process／audit stay withheld as SAIDs yet every SAID still recomputes), and
+  shows how revocation, expiry, tampering and a production root-of-trust policy
+  each flip the decision to a machine-readable `DENY_*`.
   All verifier logic lives in `public/update-trust/said.js` and is unit-tested
   against the official BLAKE3 vectors and the fixture (`tests/update-trust.test.ts`).
   Witness receipts, live key state and duplicity detection are explicitly left
