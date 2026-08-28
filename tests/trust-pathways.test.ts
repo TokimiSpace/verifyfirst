@@ -54,7 +54,21 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('function extractCesrAcdcs(stream)');
     expect(page).toContain('BROWSER_STRUCTURE_AND_LINKAGE');
     expect(page).toContain('KERI CRYPTO · LIVE BACKEND');
-    expect(page).toContain('PUT /presentations/{said} → GET /authorizations/{aid}');
+    expect(page).toContain('PUT /presentations/{said}（Content-Type: application/json+cesr）→ GET /authorizations/{aid}');
+    expect(page).not.toContain('POST /presentations');
+  });
+
+  it('never marks the KERI crypto layer verified before the live backend actually answers', () => {
+    expect(page).not.toContain("setVerifierCheck(3,'ok','KERI CRYPTO · LIVE BACKEND')");
+    expect(page).toContain('KERI CRYPTO · LIVE BACKEND AVAILABLE · 尚未送出');
+    expect(page).toContain("setBackendCheck('ok','KERI CRYPTO · LIVE BACKEND VALID')");
+    expect(page).toContain("setBackendCheck('warn',`KERI CRYPTO · LIVE BACKEND ${error.name==='AbortError'?'TIMEOUT':'ERROR'} · FAIL CLOSED`)");
+    expect(page).toContain('STATUS · NOT REVOKED');
+    expect(page).toContain('witness 允許清單於 VERIFIER_MODE=test 下不強制');
+  });
+
+  it('links to the Update Trust lifecycle page', () => {
+    expect(page).toContain('href="/update-trust/"');
   });
 
   it('connects the UI to the deployed fail-closed keripy verifier', () => {
