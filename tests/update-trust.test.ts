@@ -6,6 +6,11 @@ import {
   ROOT_OF_TRUST,
   VLEI_SCHEMAS,
   asMessage,
+  CARBON_SCHEMA,
+  buildCarbonCredential,
+  disclose,
+  verifyDisclosure,
+  serialize,
   blake3,
   blake3Digest,
   buildAgentDelegation,
@@ -238,6 +243,44 @@ describe('said.js · chain walk over the official fixture', () => {
   });
 });
 
+describe('said.js · selective disclosure of the carbon-footprint credential', () => {
+  const le = keds.find(k => k.d === 'EHRFwPbmP81ju2sOBeIXAFbfah1gd7JPfe5hEL0sZPqN')!;
+  const fixtureVc = { leCredential: le, registry: le.ri, dt: '2026-08-28T10:00:00.000Z', product: { gtin: '4710002048007', name: 'VF-2048' }, carbon: { value_kgco2e: 12.4, unit: 'kgCO2e/unit', method: 'ISO 14067:2018' }, process: { recipe: ['alloy-X 62%'], suppliers: ['S-001'] }, audit: { verifier_lei: '5493001KJTIIGC8Y1R12' } };
+
+  it('accepts a presentation that withholds process and audit while recomputing every SAID', async () => {
+    const chain = await verifyChain(fixture, { rootAid: ROOT_OF_TRUST.fixture.aid, verifySignatures: false });
+    const vc = buildCarbonCredential(fixtureVc);
+    expect(vc.e.le).toEqual({ n: le.d, s: le.s });
+    expect(vc.i).toBe(le.a.i);
+    const full = verifyDisclosure(vc, chain);
+    expect(full.decision).toBe('ACCEPT_CARBON_CLAIM');
+    expect(full.withheldBlocks).toEqual([]);
+    const partial = disclose(vc, ['product', 'carbon']);
+    const result = verifyDisclosure(partial, chain);
+    expect(result.decision).toBe('ACCEPT_CARBON_CLAIM');
+    expect(result.withheldBlocks).toEqual(['process', 'audit']);
+    expect(result.carbon.value_kgco2e).toBe(12.4);
+    expect(JSON.stringify(partial)).not.toContain('alloy-X');
+    expect(result.bytes).toBeLessThan(serialize(vc).length);
+    expect(typeof partial.a.process).toBe('string');
+    expect(partial.a.process).toBe(vc.a.process.d);
+    expect(partial.d).toBe(vc.d);
+  });
+
+  it('denies tampered values, missing required blocks and an invalid issuer chain', async () => {
+    const chain = await verifyChain(fixture, { rootAid: ROOT_OF_TRUST.fixture.aid, verifySignatures: false });
+    const vc = buildCarbonCredential(fixtureVc);
+    const tampered = disclose({ ...vc, a: { ...vc.a, carbon: { ...vc.a.carbon, value_kgco2e: 2.4 } } }, ['product', 'carbon']);
+    expect(verifyDisclosure(tampered, chain).decision).toBe('DENY_SAID_MISMATCH');
+    expect(verifyDisclosure(disclose(vc, ['product']), chain).decision).toBe('DENY_REQUIRED_BLOCK_WITHHELD');
+    const leIss = keds.find(k => k.t === 'iss' && k.i === le.d)!;
+    const revokedChain = await verifyChain([...fixture, asMessage(buildRevocation(le.d, le.ri, leIss.d, '2026-08-28T10:05:00.000Z'))], { rootAid: ROOT_OF_TRUST.fixture.aid, verifySignatures: false });
+    expect(verifyDisclosure(disclose(vc, ['product', 'carbon']), revokedChain).decision).toBe('DENY_ISSUER_CHAIN_INVALID');
+    expect(verifySaid(CARBON_SCHEMA, ['$id']).ok).toBe(true);
+    expect(CARBON_SCHEMA.scopeTags.process).toBe('read:process-recipe');
+  });
+});
+
 describe('Update Trust standalone page', () => {
   it('ships the pinned official fixture and loads the verifier module', () => {
     expect(page).toContain('<script type="module">');
@@ -253,7 +296,7 @@ describe('Update Trust standalone page', () => {
     expect(page).toContain('OFFICIAL · EGF');
     expect(page).toContain('PROPOSED · ACDC');
     expect(page).toContain('PROPOSED EXTENSION');
-    expect(page).toContain('Agent Delegation ACDC（提案，非 GLEIF 官方）');
+    expect(page).toContain('Agent Delegation ACDC 與碳足跡 VC（提案，非 GLEIF 官方）');
   });
 
   it('exposes the full lifecycle with machine-readable deny codes', () => {
@@ -280,8 +323,13 @@ describe('Update Trust standalone page', () => {
   it('provides a replayable 60-second lifecycle tour ending fail closed', () => {
     expect(page).toContain('觀看 60 秒生命週期');
     expect(page).toContain("chapter: '01 · OFFICIAL CHAIN'");
-    expect(page).toContain("chapter: '05 · UPSTREAM REVOKE'");
-    expect(page).toContain("chapter: '06 · FAIL CLOSED'");
+    expect(page).toContain("chapter: '04 · DISCLOSE ONLY CARBON'");
+    expect(page).toContain("chapter: '06 · UPSTREAM REVOKE'");
+    expect(page).toContain("chapter: '07 · FAIL CLOSED'");
+    expect(page).toContain('只揭露碳排那一項，不交出製程機密');
+    expect(page).toContain("scopeTags[b]");
+    expect(page).toContain('SCOPE_DENIED');
+    expect(page).toContain('<textarea id="fAllow">verify:vlei-chain, read:product-id, read:carbon-footprint-vc, draft:cbam-declaration</textarea>');
     expect(page).toContain('href="/trust-pathways/"');
   });
 });

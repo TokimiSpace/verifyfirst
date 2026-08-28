@@ -85,7 +85,7 @@
     </section>
 
     <section class="tour">
-      <div><p class="tour-kicker">GUIDED LIFECYCLE TOUR · 01:00</p><strong>60 秒信任生命週期導覽</strong><p>按一次自動跑完：載入官方鏈 → 瀏覽器驗證 → 建立 Agent AID 與委任 → 撤銷上游角色 → 切換 production root，全程 fail closed。</p><div class="tour-chips"><b>1 官方鏈</b><b>2 瀏覽器驗證</b><b>3 Agent 委任</b><b>4 撤銷連鎖</b><b>5 Fail closed</b></div></div>
+      <div><p class="tour-kicker">GUIDED LIFECYCLE TOUR · 01:00</p><strong>60 秒信任生命週期導覽</strong><p>按一次自動跑完：載入官方鏈 → 瀏覽器驗證 → 建立 Agent AID 與委任 → 只揭露碳排的選擇性出示 → 撤銷上游角色 → 切換 production root，全程 fail closed。</p><div class="tour-chips"><b>1 官方鏈</b><b>2 瀏覽器驗證</b><b>3 Agent 委任</b><b>4 只揭露碳排</b><b>5 撤銷連鎖</b><b>6 Fail closed</b></div></div>
       <button id="startTour" class="play">▶ 觀看 60 秒生命週期<small>預計 1 分 00 秒</small></button>
     </section>
     <section id="tourConsole" class="tour-console" aria-live="polite"><div id="tourClock" class="tour-clock">01:00</div><div class="tour-copy"><small id="tourChapter">READY · 60 SEC</small><b id="tourLine">準備好後按下播放</b><p id="tourAction">畫面會自動操作，旁白可直接照念。</p></div><div class="tour-actions"><button id="nextTour">下一幕</button><button id="exitTour" class="exit">離開</button></div></section>
@@ -132,7 +132,7 @@
             <div class="card"><small>DELEGATION ACDC · PROPOSED SCHEMA</small><h4>委任內容（可修改後再簽發）</h4>
               <div class="form">
                 <label>purpose<input id="fPurpose" value="彙整訂單 VF-2048 的產品碳足跡證明並準備 CBAM 申報草稿"></label>
-                <div class="row"><label>scope.allow（逗號分隔）<textarea id="fAllow">verify:vlei-chain, read:carbon-footprint-vc, draft:cbam-declaration</textarea></label><label>scope.deny<textarea id="fDeny">read:process-recipe, read:energy-profile, share:supplier-list, submit:declaration</textarea></label></div>
+                <div class="row"><label>scope.allow（逗號分隔）<textarea id="fAllow">verify:vlei-chain, read:product-id, read:carbon-footprint-vc, draft:cbam-declaration</textarea></label><label>scope.deny<textarea id="fDeny">read:process-recipe, read:energy-profile, share:supplier-list, submit:declaration</textarea></label></div>
                 <div class="row"><label>scope.confirm（需本人確認）<input id="fConfirm" value="submit:declaration"></label><label>ttlMinutes<input id="fTtl" type="number" min="1" max="1440" value="10"></label></div>
               </div>
               <pre id="delegationPayload" class="payload">等待簽發…</pre>
@@ -140,8 +140,19 @@
           </div>
         </section>
 
+        <section class="step" id="stepCarbon">
+          <div class="step-head"><div><small>04 · SELECTIVE DISCLOSURE · ACDC MOST-COMPACT SAID · PAIN POINT 01</small><h3>只揭露碳排那一項，不交出製程機密</h3><p>供應商以 Legal Entity vLEI 簽發產品碳足跡 VC（提案 schema，邊 <span class="mono">le → LE vLEI</span> 用 I2I）。屬性區塊 product／carbon／process／audit 各自有 SAID；出示時把不揭露的區塊換成 SAID，品牌商或海關仍能重算整張憑證的 SAID、沿邊鏈回到 GLEIF，卻看不到配方、能耗與供應商名單。</p></div><div style="display:grid;gap:6px"><button id="issueCarbon" class="btn secondary" disabled>1 供應商簽發碳足跡 VC</button><button id="presentCarbon" class="btn" disabled>2 出示給品牌商／海關</button></div></div>
+          <div class="agent-grid">
+            <div class="card"><small>HOLDER · SUPPLIER (LE) · FULL CREDENTIAL</small><h4 id="carbonTitle">尚未簽發</h4><p>選擇要揭露的區塊；若已簽發 Agent 委任，出示會先經過委任的 scope 政策閘門（process 需要 <span class="mono">read:process-recipe</span>，預設在 deny 清單）。</p>
+              <div id="discloseBoxes" class="form" style="grid-template-columns:repeat(4,1fr);display:grid;gap:6px"><label><input type="checkbox" data-block="product" checked> product</label><label><input type="checkbox" data-block="carbon" checked> carbon</label><label><input type="checkbox" data-block="process"> process</label><label><input type="checkbox" data-block="audit"> audit</label></div>
+              <pre id="carbonPayload" class="payload">等待簽發…</pre></div>
+            <div class="card"><small>VERIFIER · BRAND／CUSTOMS · WHAT IT RECEIVES</small><h4 id="carbonVerdict">尚未出示</h4><p id="carbonSummary">驗證方只會收到出示的區塊與其餘區塊的 SAID；下方列出它實際能看到的內容與重算結果。</p><div id="carbonChecks" class="checks"></div><pre id="carbonPresented" class="payload">等待出示…</pre></div>
+          </div>
+          <div class="lifecycle" style="grid-template-columns:repeat(3,1fr)"><button id="tamperCarbon" class="btn warn" disabled>竄改碳排值<small>改 12.4 → 2.4，不重算 SAID</small></button><button id="presentFull" class="btn ghost" disabled>由 Agent 出示 process<small>測試 scope 政策閘門</small></button><button id="resetCarbon" class="btn ghost" disabled>重設碳足跡 VC</button></div>
+        </section>
+
         <section class="step" id="stepLifecycle">
-          <div class="step-head"><div><small>04 · UPDATE TRUST · REQUEST → REVOKE → EXPIRE → TAMPER</small><h3>信任是狀態，不是一次性的通過</h3><p>每次 Agent 請求工具，都重新走一遍整條鏈：委任本身、上游 ECR、LE、QVI 的 TEL 狀態、SAID、簽章與 root。任何一層改變，決策立刻改變，且 <span class="mono">tool_execution=false</span> 是機器可讀的。</p></div><button id="requestTool" class="btn" disabled>Agent 請求工具</button></div>
+          <div class="step-head"><div><small>05 · UPDATE TRUST · REQUEST → REVOKE → EXPIRE → TAMPER</small><h3>信任是狀態，不是一次性的通過</h3><p>每次 Agent 請求工具，都重新走一遍整條鏈：委任本身、上游 ECR、LE、QVI 的 TEL 狀態、SAID、簽章與 root。任何一層改變，決策立刻改變，且 <span class="mono">tool_execution=false</span> 是機器可讀的。</p></div><button id="requestTool" class="btn" disabled>Agent 請求工具</button></div>
           <div id="decision" class="decision idle"><span class="decision-icon">·</span><div><small id="decisionCode">PENDING</small><h3 id="decisionTitle">尚未有請求</h3><p id="decisionText">簽發委任後按「Agent 請求工具」。沒有驗證結果就不會有 ALLOW。</p></div></div>
           <div id="decisionChecks" class="checks"></div>
           <div class="lifecycle">
@@ -157,7 +168,7 @@
         </section>
 
         <section class="step" id="stepAudit">
-          <div class="step-head"><div><small>05 · EVIDENCE · AUDIT TIMELINE + PACKET</small><h3>每一步都留下可重算的證據</h3><p>時間軸記錄真實與模擬事件的 SAID；Evidence Packet 含 fixture 雜湊、瀏覽器驗證報告、委任 ACDC、模擬 TEL 事件與決策，任何人可用同一份 said.js 重新驗證。</p></div><button id="downloadPacket" class="btn secondary" disabled>下載 Evidence Packet</button></div>
+          <div class="step-head"><div><small>06 · EVIDENCE · AUDIT TIMELINE + PACKET</small><h3>每一步都留下可重算的證據</h3><p>時間軸記錄真實與模擬事件的 SAID；Evidence Packet 含 fixture 雜湊、瀏覽器驗證報告、委任 ACDC、模擬 TEL 事件與決策，任何人可用同一份 said.js 重新驗證。</p></div><button id="downloadPacket" class="btn secondary" disabled>下載 Evidence Packet</button></div>
           <div id="events" class="events"></div>
           <div class="packet"><div><small id="packetBadge">PACKET · NOT BUILT</small><b>Evidence Packet 摘要</b><p id="packetDigest">尚未產生；建立後顯示 SHA-256。</p></div></div>
           <div class="backend"><div class="backend-head"><b>LEVEL 3 · LIVE KERIPY VERIFIER（選用）</b><span id="backendState" class="pill warn">NOT CHECKED</span></div><p class="disclaimer" style="margin:0 0 8px">同一份 fixture 送入已部署的 GLEIF-IT/vlei-verifier 容器（production root、revocation check 開啟）。因 fixture 的 root 是測試 AID，production verifier 預期拒絕——那是正確行為，本頁不會用合成 VALID 掩蓋。後端目前以 VERIFIER_MODE=test 運行以便瀏覽器免簽章輪詢（witness 允許清單在此模式下不強制）。cold start 可能長達 90 秒。</p><button id="sendBackend" class="btn ghost" disabled>送入 live verifier</button><div id="backendFlow" class="backend-flow"><span>HEALTH · PENDING</span><span>PRESENTATION · PENDING</span><span>AUTHORIZATION · PENDING</span></div><p id="backendDetail" class="backend-detail">PUT /presentations/{said} → GET /authorizations/{aid}</p></div>
@@ -183,7 +194,8 @@
           <li>沒有<b>連鎖失效規則</b>的產品級約定：上游 ECR 或 LE 被撤銷時，下游 Agent 授權應如何、多快失效。</li>
           <li>沒有<b>問責對映</b>：Agent 越權時，責任落在委任的 ECR 持有人、法律實體還是平台，需要治理框架與契約補齊（GLEIF 2026-08-25 部落格亦指出「accountability behind it remains unclear」）。</li>
         </ul></article>
-        <article class="proposal"><small>PROPOSAL · 本專案補上</small><h3>Agent Delegation ACDC（提案，非 GLEIF 官方）</h3><ul>
+        <article class="proposal"><small>PROPOSAL · 本專案補上</small><h3>Agent Delegation ACDC 與碳足跡 VC（提案，非 GLEIF 官方）</h3><ul>
+          <li><b>選擇性揭露</b>：碳足跡 VC 依 ACDC most-compact SAID 規則，product／carbon／process／audit 各自 SAID 化；出示時 process 只剩 SAID，驗證方仍能重算 a.d 與 d。這正是痛點 1「只揭露碳排那一項，不外洩製程機密」的密碼學實作。</li>
           <li><b>鏈結</b>：邊 <span class="mono">role → ECR/OOR</span> 使用官方 I2I 運算子，簽發者必須是有效角色憑證的 issuee；schema SAID 由本頁 JSON schema 自我定址計算。</li>
           <li><b>最小授權</b>：a.purpose、a.scope.allow／deny／confirm、a.expires（預設 10 分鐘）、a.disclosure=MINIMUM_NECESSARY。</li>
           <li><b>可撤銷</b>：委任有自己的 TEL registry；驗證方每次請求都重走整條鏈，任何一層 rev、過期、SAID 不符或 root 不符都回 DENY_* 與 tool_execution=false。</li>
@@ -237,7 +249,7 @@
       DENY_VERIFICATION_FAILED: ['驗證未通過', '至少一項檢查失敗；預設拒絕。'],
     };
     const TAMPER_SCOPE = ['submit:declaration', 'read:process-recipe'];
-    const state = { messages: [], report: null, agent: null, delegation: null, tamperedDelegation: null, registry: null, iss: null, sims: [], tampered: false, clockOffsetMs: 0, root: 'fixture', audit: [], sha: { local: null, remote: null }, lastDecision: null, packet: null, rotations: 0 };
+    const state = { messages: [], report: null, agent: null, delegation: null, tamperedDelegation: null, carbon: null, carbonTampered: false, registry: null, iss: null, sims: [], tampered: false, clockOffsetMs: 0, root: 'fixture', audit: [], sha: { local: null, remote: null }, lastDecision: null, packet: null, rotations: 0 };
     let clockSeconds = 0;
     const toast = m => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1800); };
     const short = s => typeof s === 'string' && s.length > 20 ? `${s.slice(0, 10)}…${s.slice(-6)}` : (s ?? '–');
@@ -317,7 +329,7 @@
       const ms = Math.round(performance.now() - started);
       button.disabled = false; button.textContent = '重新執行瀏覽器驗證';
       if (!silent) { audit('Browser verification completed', report.checks.every(c => c.ok) ? 'BROWSER_CHECKS_PASS' : 'BROWSER_CHECKS_FAIL', `${report.checks.filter(c => c.ok).length}/${report.checks.length} checks · ${report.credentials.length} credentials · ${ms} ms`, report.checks.every(c => c.ok) ? '' : 'deny'); toast(`瀏覽器驗證完成 · ${ms} ms`); }
-      $('#createAgent').disabled = false;
+      $('#createAgent').disabled = false; $('#issueCarbon').disabled = false;
       return report;
     }
 
@@ -366,7 +378,54 @@
       renderDecision(null); runVerification(true); toast('委任憑證已簽發（模擬 TEL）');
     }
 
-    /* ------------------------------------------------------------ 04 lifecycle */
+    /* ------------------------------------------------------ 04 selective disclosure */
+    const CARBON_FIXTURE = { product: { gtin: '4710002048007', name: '精密齒輪組 VF-2048', batch: 'B2026-08' }, carbon: { value_kgco2e: 12.4, unit: 'kgCO2e/unit', method: 'ISO 14067:2018', period: '2026-Q2', boundary: 'cradle-to-gate' }, process: { energy_profile: { grid_kwh: 3.1, solar_kwh: 1.2, gas_m3: 0.4 }, recipe: ['alloy-X 62%', 'coating-Y 3%', 'lubricant-Z 0.5%'], suppliers: ['S-001 板材', 'S-014 塗層', 'S-027 熱處理'] }, audit: { verifier_lei: '5493001KJTIIGC8Y1R12', report_said: 'EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', scope: 'third-party verification (synthetic)' } };
+    const leCredential = () => state.messages.map(m => m.ked).find(k => k?.d === 'EHRFwPbmP81ju2sOBeIXAFbfah1gd7JPfe5hEL0sZPqN');
+    const selectedBlocks = () => [...document.querySelectorAll('#discloseBoxes input')].filter(i => i.checked).map(i => i.dataset.block);
+    function issueCarbon() {
+      const le = leCredential(); if (!le) { toast('fixture 尚未載入'); return; }
+      state.carbon = K.buildCarbonCredential({ leCredential: le, registry: le.ri, dt: simulatedNow().toISOString(), ...CARBON_FIXTURE }); state.carbonTampered = false;
+      $('#carbonTitle').textContent = `碳足跡 VC ${short(state.carbon.d)} · ${K.serialize(state.carbon).length} bytes`;
+      $('#carbonPayload').textContent = JSON.stringify(state.carbon, null, 2);
+      $('#carbonVerdict').textContent = '尚未出示'; $('#carbonChecks').innerHTML = ''; $('#carbonPresented').textContent = '等待出示…';
+      audit('Carbon-footprint VC issued by supplier LE', 'CARBON_VC_ISSUED', `SAID ${state.carbon.d} · issuer ${short(le.a.i)} (LEI ${le.a.LEI}) · edge le→${short(le.d)} (I2I) · a.d over most-compact form · 4 sub-blocks SAIDed · synthetic product data`, 'sim');
+      ['#presentCarbon', '#tamperCarbon', '#presentFull', '#resetCarbon'].forEach(sel => $(sel).disabled = false);
+      $('#issueCarbon').textContent = '重新簽發碳足跡 VC'; toast('碳足跡 VC 已簽發（合成資料）');
+    }
+    function scopeGate(blocks) {
+      if (!state.delegation) return { ok: true, actor: 'supplier LE (no agent)' };
+      const scope = state.delegation.a.scope, needed = blocks.map(b => K.CARBON_SCHEMA.scopeTags[b]);
+      const denied = needed.filter(tag => scope.deny.includes(tag) || !scope.allow.includes(tag));
+      return { ok: denied.length === 0, actor: `agent ${short(state.agent?.aid)}`, denied };
+    }
+    async function presentCarbon(blocks = selectedBlocks()) {
+      if (!state.carbon) return;
+      if (!state.report) await runVerification(true);
+      const gate = scopeGate(blocks);
+      if (!gate.ok) {
+        $('#carbonVerdict').textContent = `SCOPE_DENIED · ${gate.denied.join(', ')}`; $('#carbonSummary').textContent = '政策閘門在出示前擋下：Agent 的委任 scope 不允許讀取這些區塊，驗證方什麼都沒收到。';
+        renderChecks($('#carbonChecks'), [{ ok: false, label: `Policy gate · ${gate.actor} may not disclose ${gate.denied.join(', ')}`, detail: `delegation ${short(state.delegation.d)} · allow ${state.delegation.a.scope.allow.join(', ')} · deny ${state.delegation.a.scope.deny.join(', ')}`, level: 'POLICY' }]);
+        $('#carbonPresented').textContent = '(nothing presented)';
+        audit('Carbon VC presentation blocked by delegation scope', 'SCOPE_DENIED', `${gate.actor} requested ${blocks.join(', ')} · denied ${gate.denied.join(', ')} · tool_execution=false`, 'deny'); toast('scope 政策閘門拒絕出示'); return;
+      }
+      const source = state.carbonTampered ? { ...state.carbon, a: { ...state.carbon.a, carbon: { ...state.carbon.a.carbon, value_kgco2e: 2.4 } } } : state.carbon;
+      const presentation = K.disclose(source, blocks);
+      const result = K.verifyDisclosure(presentation, state.report);
+      const accept = result.decision === 'ACCEPT_CARBON_CLAIM';
+      $('#carbonVerdict').textContent = `${result.decision}${accept ? ` · ${result.carbon.value_kgco2e} ${result.carbon.unit}` : ''}`;
+      $('#carbonSummary').textContent = accept ? `驗證方看到：${result.disclosedBlocks.join('、')}（${result.bytes} bytes，完整版 ${K.serialize(state.carbon).length} bytes）；只拿到 SAID：${result.withheldBlocks.join('、') || '無'}。每個 SAID 都已重算，邊鏈回到 LE vLEI → QVI → GLEIF root。` : `拒絕：${result.checks.filter(c => !c.ok).map(c => c.label).join('；')}`;
+      renderChecks($('#carbonChecks'), result.checks);
+      $('#carbonPresented').textContent = JSON.stringify(presentation, null, 2);
+      audit(`Carbon VC presented by ${gate.actor}`, result.decision, `disclosed ${result.disclosedBlocks.join(', ')} · withheld ${result.withheldBlocks.join(', ') || 'none'} · ${result.bytes} bytes · a.d ${short(presentation.a.d)} · d ${short(presentation.d)}`, accept ? '' : 'deny');
+      toast(accept ? `品牌商接受碳排主張：${result.carbon.value_kgco2e} kgCO₂e` : `拒絕：${result.decision}`);
+    }
+    $('#issueCarbon').onclick = issueCarbon;
+    $('#presentCarbon').onclick = () => presentCarbon();
+    $('#presentFull').onclick = () => presentCarbon(['product', 'carbon', 'process']);
+    $('#tamperCarbon').onclick = () => { state.carbonTampered = true; audit('Carbon value tampered in transit', 'TAMPER_SIMULATED', 'a.carbon.value_kgco2e 12.4 → 2.4，未重算 a.carbon.d／a.d／d', 'sim'); presentCarbon(); };
+    $('#resetCarbon').onclick = () => { state.carbonTampered = false; issueCarbon(); };
+
+    /* ------------------------------------------------------------ 05 lifecycle */
     function renderDecision(report) {
       const box = $('#decision');
       if (!report) { box.className = 'decision idle'; box.querySelector('.decision-icon').textContent = '·'; $('#decisionCode').textContent = 'PENDING'; $('#decisionTitle').textContent = '尚未有請求'; $('#decisionText').textContent = '按「Agent 請求工具」重新走整條鏈。'; $('#decisionChecks').innerHTML = ''; return; }
@@ -430,7 +489,7 @@
 
     /* -------------------------------------------------------------- 05 evidence */
     async function buildPacket() {
-      const packet = { schema: 'verifyfirst.update-trust-evidence.v1', generated_at: new Date().toISOString(), demo_mode: true, fixture: { source: FIXTURE.remote, pinned_commit: FIXTURE.commit, sha256_local: state.sha.local, sha256_remote: state.sha.remote, messages: state.messages.length }, root_of_trust: { policy: state.root, aid: rootAid() }, agent: state.agent ? { aid: state.agent.aid, inception: state.agent.icp, rotations: state.rotations } : null, delegation: state.delegation, delegation_as_presented: state.tampered ? state.tamperedDelegation : state.delegation, tampered_in_transit: state.tampered, simulated_events: state.sims.map(m => m.ked).filter(k => !k.v?.startsWith('ACDC')), verification: state.report ? { checks: state.report.checks, credentials: state.report.credentials, decision: state.report.decision } : null, audit: state.audit, verifier: { module: 'update-trust/said.js', browser_layers: ['BLAKE3_SAID', 'ED25519_KEL_SIGNATURES', 'ACDC_EDGES_I2I', 'SCHEMA_SAID_PIN', 'TEL_STATUS', 'KEL_ANCHORING', 'EXPIRY'], not_verified_in_browser: ['witness receipts', 'live key state via OOBI', 'duplicity / watchers', 'production root policy beyond AID comparison'] } };
+      const packet = { schema: 'verifyfirst.update-trust-evidence.v1', generated_at: new Date().toISOString(), demo_mode: true, fixture: { source: FIXTURE.remote, pinned_commit: FIXTURE.commit, sha256_local: state.sha.local, sha256_remote: state.sha.remote, messages: state.messages.length }, root_of_trust: { policy: state.root, aid: rootAid() }, agent: state.agent ? { aid: state.agent.aid, inception: state.agent.icp, rotations: state.rotations } : null, carbon_credential: state.carbon, delegation: state.delegation, delegation_as_presented: state.tampered ? state.tamperedDelegation : state.delegation, tampered_in_transit: state.tampered, simulated_events: state.sims.map(m => m.ked).filter(k => !k.v?.startsWith('ACDC')), verification: state.report ? { checks: state.report.checks, credentials: state.report.credentials, decision: state.report.decision } : null, audit: state.audit, verifier: { module: 'update-trust/said.js', browser_layers: ['BLAKE3_SAID', 'ED25519_KEL_SIGNATURES', 'ACDC_EDGES_I2I', 'SCHEMA_SAID_PIN', 'TEL_STATUS', 'KEL_ANCHORING', 'EXPIRY'], not_verified_in_browser: ['witness receipts', 'live key state via OOBI', 'duplicity / watchers', 'production root policy beyond AID comparison'] } };
       const bytes = new TextEncoder().encode(JSON.stringify(packet)); packet.packet_sha256 = await sha256Hex(bytes);
       state.packet = packet; $('#packetBadge').textContent = 'PACKET · READY'; $('#packetDigest').textContent = `SHA-256 ${packet.packet_sha256} · ${Math.round(bytes.length / 1024)} KB · ${state.audit.length} audit events`;
       return packet;
@@ -477,13 +536,14 @@
       { at: 0, chapter: '01 · OFFICIAL CHAIN', line: '載入 GLEIF 官方 vlei-verifier 的 regression fixture：GLEIF → QVI → Legal Entity → ECR，共 38 則 CESR 訊息。', action: '本地副本與 GitHub raw 逐位元比對 SHA-256；不是自己畫的圖，是 keripy 產生的真實 KEL／TEL／ACDC。', run: async () => { await loadFixture(); $('#stepFixture').scrollIntoView({ block: 'start' }); } },
       { at: 9, chapter: '02 · BROWSER VERIFIES', line: '瀏覽器重算 22 個 Blake3 SAID、驗 11 個 Ed25519 KEL 簽章、走 4 條 I2I 邊鏈，並核對官方 schema SAID 與 TEL 錨定。', action: '所有檢查標示 BROWSER／POLICY／BACKEND 層級；witness receipts 與即時 key state 明確留給 keripy 後端。', run: async () => { await runVerification(); $('#stepVerify').scrollIntoView({ block: 'start' }); } },
       { at: 21, chapter: '03 · AGENT DELEGATION', line: 'Agent 用 KERI inception 自我認證出 AID；ECR 持有人簽發一張 10 分鐘、單一目的、明列 allow／deny／confirm 的委任 ACDC。', action: '委任的邊 role→ECR 用官方 I2I 運算子鏈回真實 ECR 憑證；schema 標示為提案，不冒充 GLEIF 官方類型。', run: async () => { await createAgent(); issueDelegation(); $('#stepAgent').scrollIntoView({ block: 'start' }); } },
-      { at: 33, chapter: '04 · REQUEST → ALLOW', line: 'Agent 請求工具：驗證方重走整條鏈，四層 ISSUED，ALLOW_CHAIN_VERIFIED，但 deny／confirm 項目仍被政策閘門攔住。', action: '允許不等於全權；scope 才是行動邊界。', run: async () => { await requestTool(); $('#stepLifecycle').scrollIntoView({ block: 'start' }); } },
-      { at: 42, chapter: '05 · UPSTREAM REVOKE', line: 'QVI 撤銷 ECR：委任本身沒動，決策卻立刻變成 DENY_UPSTREAM_ECR_REVOKED，tool_execution=false。', action: '信任是鏈，任何一環的 TEL 出現 rev，下游授權連帶失效。', run: async () => { revokeCredential(findCred('ECR'), 'ECR credential', 'QVI (simulated)'); } },
-      { at: 51, chapter: '06 · FAIL CLOSED', line: '切到 GLEIF production root：fixture 的測試 root 立即被拒，DENY_ROOT_MISMATCH——與 live keripy verifier 的判定一致。', action: '沒有綠燈可以被說服；Evidence Packet 含所有 SAID，任何人可用 said.js 重算。', run: async () => { $('#rootProduction').click(); await buildPacket(); $('#stepAudit').scrollIntoView({ block: 'start' }); } },
+      { at: 30, chapter: '04 · DISCLOSE ONLY CARBON', line: '供應商用 LE vLEI 簽發碳足跡 VC；Agent 只出示 product 與 carbon，process 與 audit 只剩 SAID。品牌商重算所有 SAID、沿 I2I 邊鏈回到 GLEIF root，接受 12.4 kgCO₂e，卻看不到配方。', action: '同一張憑證，揭露程度由持有人決定；驗證方不需要信任任何人。', run: async () => { issueCarbon(); await presentCarbon(['product', 'carbon']); $('#stepCarbon').scrollIntoView({ block: 'start' }); } },
+      { at: 40, chapter: '05 · REQUEST → ALLOW', line: 'Agent 請求工具：驗證方重走整條鏈，四層 ISSUED，ALLOW_CHAIN_VERIFIED，但 deny／confirm 項目仍被政策閘門攔住。', action: '允許不等於全權；scope 才是行動邊界。', run: async () => { await requestTool(); $('#stepLifecycle').scrollIntoView({ block: 'start' }); } },
+      { at: 47, chapter: '06 · UPSTREAM REVOKE', line: 'QVI 撤銷 ECR：委任本身沒動，決策卻立刻變成 DENY_UPSTREAM_ECR_REVOKED，tool_execution=false。', action: '信任是鏈，任何一環的 TEL 出現 rev，下游授權連帶失效。', run: async () => { revokeCredential(findCred('ECR'), 'ECR credential', 'QVI (simulated)'); } },
+      { at: 54, chapter: '07 · FAIL CLOSED', line: '切到 GLEIF production root：fixture 的測試 root 立即被拒，DENY_ROOT_MISMATCH——與 live keripy verifier 的判定一致。', action: '沒有綠燈可以被說服；Evidence Packet 含所有 SAID，任何人可用 said.js 重算。', run: async () => { $('#rootProduction').click(); await buildPacket(); $('#stepAudit').scrollIntoView({ block: 'start' }); } },
     ];
     let tourTimer = null, tourStart = 0, tourStage = -1;
     function showScene(index) { if (index < 0 || index >= scenes.length || index === tourStage) return; tourStage = index; const s = scenes[index]; $('#tourChapter').textContent = s.chapter; $('#tourLine').textContent = s.line; $('#tourAction').textContent = s.action; s.run(); }
-    function tourTick() { const elapsed = (performance.now() - tourStart) / 1000 / timeScale, remaining = Math.max(0, 60 - elapsed); $('#tourClock').textContent = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(Math.ceil(remaining % 60)).padStart(2, '0')}`; const idx = scenes.reduce((acc, s, i) => elapsed >= s.at ? i : acc, -1); if (idx > tourStage) showScene(idx); if (elapsed >= 60) { clearInterval(tourTimer); tourTimer = null; $('#tourClock').textContent = '00:00'; $('#tourChapter').textContent = 'COMPLETE · REPLAYABLE'; $('#tourLine').textContent = '60 秒完成：官方鏈、瀏覽器驗證、Agent 委任、上游撤銷、production root 拒絕，全程 fail closed。'; $('#tourAction').textContent = '可自由操作生命週期按鈕，或下載 Evidence Packet。'; tourStage = -1; } }
+    function tourTick() { const elapsed = (performance.now() - tourStart) / 1000 / timeScale, remaining = Math.max(0, 60 - elapsed); $('#tourClock').textContent = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(Math.ceil(remaining % 60)).padStart(2, '0')}`; const idx = scenes.reduce((acc, s, i) => elapsed >= s.at ? i : acc, -1); if (idx > tourStage) showScene(idx); if (elapsed >= 60) { clearInterval(tourTimer); tourTimer = null; $('#tourClock').textContent = '00:00'; $('#tourChapter').textContent = 'COMPLETE · REPLAYABLE'; $('#tourLine').textContent = '60 秒完成：官方鏈、瀏覽器驗證、Agent 委任、只揭露碳排、上游撤銷、production root 拒絕，全程 fail closed。'; $('#tourAction').textContent = '可自由操作生命週期按鈕，或下載 Evidence Packet。'; tourStage = -1; } }
     function startTour() { if (tourTimer) clearInterval(tourTimer); location.hash = ''; tourStage = -1; if (state.root !== 'production') {} else { state.root = 'fixture'; document.querySelectorAll('.root-switch button').forEach(x => x.classList.toggle('active', x.dataset.root === 'fixture')); } if (state.delegation) clearDelegation('tour restarted'); tourStart = performance.now(); $('#tourConsole').classList.add('active'); showScene(0); tourTimer = setInterval(tourTick, 100 * timeScale); tourTick(); }
     $('#startTour').onclick = startTour;
     $('#nextTour').onclick = () => { if (!tourTimer && tourStage < 0) { startTour(); return; } const index = Math.min(tourStage + 1, scenes.length - 1); tourStart = performance.now() - scenes[index].at * 1000 * timeScale; showScene(index); tourTick(); };

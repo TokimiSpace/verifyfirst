@@ -515,3 +515,82 @@ export function encodeIndexedSig(rawSig, index = 0) {
   const padded = new Uint8Array(2 + rawSig.length); padded.set(rawSig, 2);
   return 'A' + B64[index] + b64urlEncode(padded).slice(2);
 }
+
+/* ------------------------------------------------- SELECTIVE DISCLOSURE */
+// ACDC graduated／partial disclosure: every nested block carries its own SAID, and the SAID of a parent
+// block is computed over its MOST COMPACT form (nested blocks replaced by their SAIDs). A holder can
+// therefore withhold any nested block by presenting just its SAID, and the verifier still recomputes the
+// parent SAID — and the credential's top-level SAID — without seeing the withheld content.
+// Note: the vLEI credentials in the fixture are SAIDed by keripy over their expanded form (they do not use
+// graduated disclosure); the carbon-footprint credential below is a VerifyFirst proposal using the compact rule.
+const isSaidBlock = v => v && typeof v === 'object' && !Array.isArray(v) && typeof v.d === 'string' && v.d.length === 44;
+
+/** Replace every nested SAID block with its SAID, verifying each one on the way. */
+export function compactify(block, path = 'a') {
+  const checks = [], compact = {};
+  for (const [key, value] of Object.entries(block)) {
+    if (key !== 'd' && isSaidBlock(value)) {
+      const inner = compactify(value, `${path}.${key}`);
+      checks.push(...inner.checks);
+      const computed = saidify(inner.compact).said;
+      checks.push({ path: `${path}.${key}`, ok: computed === value.d, expected: value.d, computed, disclosed: true });
+      compact[key] = value.d;
+    } else compact[key] = value;
+  }
+  return { compact, checks };
+}
+
+export const CARBON_SCHEMA = saidify({
+  $id: DUMMY,
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  title: 'Product Carbon Footprint Credential (VerifyFirst proposal · NOT a GLEIF vLEI schema)',
+  description: 'Issued by a Legal Entity (supplier) under its Legal Entity vLEI Credential (edge le, I2I). Attribute sub-blocks product／carbon／process／audit are independently SAIDed so a presentation can disclose the carbon figure while withholding process secrets.',
+  version: '0.2.0',
+  disclosure: 'ACDC most-compact SAID rule: a.d = SAID over {product: SAID, carbon: SAID, process: SAID, audit: SAID}; d = SAID over {v,d,i,ri,s,a: a.d, e: e.d, r: r.d}',
+  required: ['product', 'carbon'],
+  scopeTags: { product: 'read:product-id', carbon: 'read:carbon-footprint-vc', process: 'read:process-recipe', audit: 'read:audit-report' },
+}, ['$id']).obj;
+
+export function buildCarbonCredential({ leCredential, registry, dt, product, carbon, process, audit }) {
+  const sub = obj => saidify({ d: DUMMY, ...obj }).obj;
+  const attrs = { d: DUMMY, i: leCredential.a.i, dt, LEI: leCredential.a.LEI, product: sub(product), carbon: sub(carbon), process: sub(process), audit: sub(audit) };
+  const a = { ...attrs, d: saidify(compactify(attrs).compact).said };
+  const e = saidify({ d: DUMMY, le: { n: leCredential.d, s: leCredential.s } }).obj;
+  const r = saidify({ d: DUMMY, disclosureRule: { l: 'Sub-blocks of the attribute section may be withheld and presented as SAIDs; the verifier recomputes all disclosed SAIDs and the most-compact top-level SAID.' }, proposalDisclaimer: { l: 'VerifyFirst hackathon proposal; not a GLEIF vLEI credential type.' } }).obj;
+  const compactTop = saidify({ v: versionString('ACDC', 'JSON', 0), d: DUMMY, i: leCredential.a.i, ri: registry, s: CARBON_SCHEMA.$id, a: a.d, e: e.d, r: r.d }).obj;
+  return { ...compactTop, a, e, r };
+}
+
+/** Build a presentation that discloses only the named attribute sub-blocks (others become their SAID). */
+export function disclose(acdc, disclosed) {
+  const a = { ...acdc.a };
+  for (const [key, value] of Object.entries(a)) if (key !== 'd' && isSaidBlock(value) && !disclosed.includes(key)) a[key] = value.d;
+  return { ...acdc, a };
+}
+
+export function verifyDisclosure(presentation, chainReport, { requiredBlocks = ['carbon'] } = {}) {
+  const checks = [];
+  const push = (id, ok, label, detail) => checks.push({ id, ok, label, detail, level: 'BROWSER' });
+  const { compact, checks: blockChecks } = compactify(presentation.a);
+  const disclosedBlocks = Object.keys(presentation.a).filter(k => k !== 'd' && isSaidBlock(presentation.a[k]));
+  const knownBlocks = Object.keys(CARBON_SCHEMA.scopeTags);
+  const withheldBlocks = knownBlocks.filter(k => typeof presentation.a[k] === 'string' && presentation.a[k].length === 44);
+  for (const c of blockChecks) push(`block:${c.path}`, c.ok, `${c.path} · disclosed block SAID ${c.ok ? 'recomputed' : 'MISMATCH'}`, c.ok ? c.computed : `expected ${c.expected} computed ${c.computed}`);
+  const aSaid = saidify(compact).said;
+  push('a', aSaid === presentation.a.d, `a.d · attribute section ${aSaid === presentation.a.d ? 'recomputed from most-compact form' : 'MISMATCH'}`, `${withheldBlocks.length} block(s) withheld as SAIDs: ${withheldBlocks.join(', ') || 'none'}`);
+  const eOk = !isSaidBlock(presentation.e) || saidify(presentation.e).said === presentation.e.d;
+  const rOk = !isSaidBlock(presentation.r) || saidify(presentation.r).said === presentation.r.d;
+  const topCompact = { v: presentation.v, d: presentation.d, i: presentation.i, ri: presentation.ri, s: presentation.s, a: presentation.a.d, e: isSaidBlock(presentation.e) ? presentation.e.d : presentation.e, r: isSaidBlock(presentation.r) ? presentation.r.d : presentation.r };
+  const topOk = saidify(topCompact).said === presentation.d && eOk && rOk;
+  push('top', topOk, `d · credential SAID ${topOk ? 'recomputed over most-compact form' : 'MISMATCH'}`, presentation.d);
+  push('schema', presentation.s === CARBON_SCHEMA.$id, presentation.s === CARBON_SCHEMA.$id ? 'Schema · PROPOSED carbon-footprint schema (not GLEIF)' : 'Schema · unknown', presentation.s);
+  const missing = requiredBlocks.filter(b => !disclosedBlocks.includes(b));
+  push('required', missing.length === 0, missing.length ? `Required block(s) not disclosed: ${missing.join(', ')}` : `Required block(s) disclosed: ${requiredBlocks.join(', ')}`, 'The verifier asks only for what it needs; everything else may stay withheld.');
+  const edge = isSaidBlock(presentation.e) ? presentation.e.le : null;
+  const issuerCred = edge ? chainReport?.credentials.find(c => c.said === edge.n) : null;
+  const edgeOk = !!issuerCred && issuerCred.schemaKey === 'LE' && issuerCred.chainValid && issuerCred.status === 'ISSUED' && issuerCred.issuee === presentation.i && (!edge.s || issuerCred.schema === edge.s);
+  push('edge', edgeOk, `Edge le → Legal Entity vLEI · I2I ${edgeOk ? 'satisfied' : 'FAILED'}`, issuerCred ? `issuer ${presentation.i.slice(0, 16)}… is the issuee of LE credential ${issuerCred.said.slice(0, 16)}… (LEI ${issuerCred.lei}) · chain ${issuerCred.chainValid ? 'valid' : 'BROKEN'} · ${issuerCred.status}` : 'LE credential not found in verified chain');
+  const decision = !topOk || checks.some(c => !c.ok && (c.id === 'a' || c.id.startsWith('block:'))) ? 'DENY_SAID_MISMATCH' : !edgeOk ? 'DENY_ISSUER_CHAIN_INVALID' : missing.length ? 'DENY_REQUIRED_BLOCK_WITHHELD' : presentation.s !== CARBON_SCHEMA.$id ? 'DENY_UNKNOWN_SCHEMA' : 'ACCEPT_CARBON_CLAIM';
+  const bytes = serialize(presentation).length;
+  return { checks, disclosedBlocks, withheldBlocks, decision, bytes, carbon: disclosedBlocks.includes('carbon') ? presentation.a.carbon : null };
+}
