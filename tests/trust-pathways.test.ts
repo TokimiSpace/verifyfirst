@@ -29,7 +29,7 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('4 撤銷拒絕');
     expect(page).toContain('grid-template-columns:repeat(8,1fr)');
     expect(page).toContain("at:10,chapter:'02 · GLEIF vLEI VERIFIER'");
-    expect(page).toContain("at:46,chapter:'05 · PAYMENT RISK'");
+    expect(page).toContain("at:46,chapter:'05 · PAYMENT RISK + IFF'");
     expect(page).toContain("at:83,chapter:'08 · FAIL CLOSED'");
     expect(page).toContain('tool_execution=false');
     expect(page).toContain("$('#pauseJudge').onclick");
@@ -164,8 +164,31 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('FIXTURE FALLBACK');
   });
 
+  it('embeds the pinned IFF SDK as a pre-payment evidence input', () => {
+    expect(page).toContain('IFF SDK PREFLIGHT · x402 v2');
+    expect(page).toContain('https://ifandonlyif.io/sdk');
+    expect(page).toContain('@ifandonlyif/x402-preflight@0.1.0/dist/index.js');
+    expect(page).toContain('const result=await sdk.verify(endpoint.toString(),requirement)');
+    expect(page).toContain("consistent:{verdict:'consistent',policy:'CONTINUE_OTHER_CHECKS'");
+    expect(page).toContain("diverged:{verdict:'diverged',policy:'HOLD_REQUIREMENT_DIVERGED'");
+    expect(page).toContain("stale:{verdict:'stale',policy:'REVIEW_STALE_EVIDENCE'");
+    expect(page).toContain("unobserved:{verdict:'unobserved',policy:'REVIEW_UNOBSERVED_ENDPOINT'");
+    expect(page).toContain("return'HOLD_IFF_UNAVAILABLE'");
+    expect(page).toContain('不能證明秘密從未外洩');
+  });
+
+  it('keeps the judge journey on two VerifyFirst URLs and embeds IFF in the main demo', () => {
+    expect(page).toContain('URL 01 · JUDGE DEMO');
+    expect(page).toContain('https://verify1st.tw/trust-pathways/');
+    expect(page).toContain('URL 02 · TECHNICAL PROOF');
+    expect(page).toContain('https://verify1st.tw/update-trust');
+    expect(page).toContain('鏈上＋IFF 查驗');
+  });
+
   it('exports a signed and locally verifiable minimal-disclosure evidence packet', () => {
-    expect(page).toContain('verifyfirst.payment-risk-evidence.v2');
+    expect(page).toContain('verifyfirst.payment-risk-evidence.v3');
+    expect(page).toContain('external_evidence:{iff_x402_preflight:');
+    expect(page).toContain("event:'IFF_X402_PREFLIGHT'");
     expect(page).toContain("algorithm:'ECDSA_P256_SHA256'");
     expect(page).toContain("crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'}");
     expect(page).toContain("crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'}");
