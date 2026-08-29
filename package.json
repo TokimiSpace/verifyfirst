@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "First-step scam verification engine — analyzes suspicious messages, links, and phone numbers for Taiwan users",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "license": "MIT",
   "keywords": [
     "anti-scam",
@@ -24,6 +27,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
+    "@ifandonlyif/x402-preflight": "^0.1.0",
     "@vercel/analytics": "^1.6.1",
     "@vercel/blob": "^2.6.1",
     "lucide-react": "^0.555.0",

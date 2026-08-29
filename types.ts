@@ -102,10 +102,12 @@ export interface TrustTaggedValue {
 }
 
 export interface AgentVerification {
-  status: 'NOT_RUN' | 'OBSERVED_URL' | 'OBSERVED_PROFILE' | 'LIMITED';
+  status: 'NOT_RUN' | 'OBSERVED_URL' | 'OBSERVED_PROFILE' | 'BOT_BLOCKED' | 'NOT_FOUND' | 'LIMITED';
   originalUrl?: string;
   redirectChain: string[];
   finalLandingPage?: string;
+  httpStatus?: number | null;
+  pageStatus?: string;
   pageTitle?: string;
   visibleSummary?: string;
   forms: string[];
@@ -118,6 +120,27 @@ export interface AgentVerification {
   detectedPattern?: string;
   screenshots: string[];
   riskObservations: TrustTaggedValue[];
+  x402Preflight?: IffX402Preflight;
+}
+
+export type IffX402Verdict = 'consistent' | 'diverged' | 'stale' | 'unobserved';
+export type IffX402PreflightStatus = 'VERIFIED' | 'INVALID_REQUIREMENT' | 'UNAVAILABLE';
+
+export interface IffX402Preflight {
+  provider: 'ifandonlyif.io';
+  status: IffX402PreflightStatus;
+  verdict?: IffX402Verdict;
+  divergenceKind?: 'amount_only' | 'payee';
+  matchesLastObserved?: boolean;
+  known?: boolean;
+  ownershipStatus?: string;
+  observedAt?: string;
+  stableSince?: string;
+  monitorId?: string;
+  reportHash?: string;
+  inclusionAvailable: boolean;
+  disclaimer?: string;
+  errorCode?: string;
 }
 
 export interface OfficialRouteResolution {
@@ -286,4 +309,52 @@ export interface TrustTimelineEvent {
   decision: AgentDecision | 'INFO';
   detail: string;
   evidenceId: string;
+}
+
+// ========== Credential exposure incident response ==========
+
+export type CredentialIncidentSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM';
+export type CredentialActionPhase = 'REVOKE' | 'REISSUE' | 'DEPLOY' | 'REVIEW' | 'VERIFY';
+export type CredentialActionStatus = 'PENDING' | 'COMPLETED';
+
+export interface CredentialService {
+  id: string;
+  label: string;
+  severity: CredentialIncidentSeverity;
+  matchedNames: string[];
+}
+
+export interface CredentialIncidentAnalysis {
+  id: string;
+  sourceUrl?: string;
+  detectedAt: string;
+  exposedNames: string[];
+  services: CredentialService[];
+}
+
+export interface CredentialInventoryMatch {
+  name: string;
+  service: string;
+  severity: CredentialIncidentSeverity;
+}
+
+export interface CredentialResponseAction {
+  id: string;
+  phase: CredentialActionPhase;
+  title: string;
+  detail: string;
+  affectedNames: string[];
+  owner: string;
+  status: CredentialActionStatus;
+  completedAt?: string;
+  evidenceId?: string;
+}
+
+export interface CredentialIncidentWorkspace {
+  version: 1;
+  analysis: CredentialIncidentAnalysis;
+  inventoryNames: string[];
+  matches: CredentialInventoryMatch[];
+  actions: CredentialResponseAction[];
+  timeline: TrustTimelineEvent[];
 }

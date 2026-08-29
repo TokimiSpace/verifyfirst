@@ -19,6 +19,7 @@ const PAGE_STATUS_LABEL: Record<string, { zh: string; en: string; vi: string; st
   observed:        { zh: '✅ 已觀察',          en: '✅ Observed',         vi: '✅ Đã quan sát',      style: 'text-emerald-400' },
   not_found:       { zh: '🔴 頁面不存在 (404)', en: '🔴 Not found (404)',   vi: '🔴 Không tìm thấy',   style: 'text-red-400' },
   forbidden:       { zh: '🔴 存取被拒 (403)',   en: '🔴 Forbidden (403)',   vi: '🔴 Bị từ chối (403)', style: 'text-red-400' },
+  payment_required:{ zh: '💳 要求付款 (402)',    en: '💳 Payment required (402)', vi: '💳 Yêu cầu thanh toán (402)', style: 'text-amber-300' },
   server_error:    { zh: '🟠 伺服器錯誤',       en: '🟠 Server error',      vi: '🟠 Lỗi máy chủ',      style: 'text-orange-400' },
   bot_challenge:   { zh: '🟡 反爬蟲保護',       en: '🟡 Bot protection',    vi: '🟡 Bảo vệ bot',       style: 'text-yellow-400' },
   timeout:         { zh: '⏱ 連線逾時',          en: '⏱ Timeout',           vi: '⏱ Hết thời gian',     style: 'text-gray-400' },
@@ -42,6 +43,10 @@ const LABELS = {
     showDetails: 'Show technical details',
     hideDetails: 'Hide technical details',
     noNarrative: 'Agent visited the page and collected technical data. See details below.',
+    iffTitle: 'IFF x402 preflight',
+    iffBoundary: 'Independent requirement evidence only — not a payment-safety or delivery guarantee.',
+    iffInvalid: 'The 402 response did not contain a valid x402 v2 requirement.',
+    iffUnavailable: 'IFF evidence could not be checked right now.',
   },
   'zh-TW': {
     title: '我替你點開後，看到了這些事',
@@ -58,6 +63,10 @@ const LABELS = {
     showDetails: '顯示技術細節',
     hideDetails: '收起技術細節',
     noNarrative: 'Agent 已造訪頁面並收集技術資料，詳情請見下方。',
+    iffTitle: 'IFF x402 付款前查驗',
+    iffBoundary: '僅比對獨立觀測的付款要求，不代表付款安全，也不保證付款後交付。',
+    iffInvalid: '這個 402 回應沒有有效的 x402 v2 付款要求。',
+    iffUnavailable: '目前暫時無法查詢 IFF 證據。',
   },
   vi: {
     title: 'Kết quả xác minh của agent',
@@ -74,8 +83,19 @@ const LABELS = {
     showDetails: 'Hiện chi tiết kỹ thuật',
     hideDetails: 'Ẩn chi tiết kỹ thuật',
     noNarrative: 'Agent đã truy cập trang và thu thập dữ liệu kỹ thuật. Xem chi tiết bên dưới.',
+    iffTitle: 'Kiểm tra trước IFF x402',
+    iffBoundary: 'Chỉ đối chiếu yêu cầu thanh toán độc lập — không đảm bảo an toàn hoặc giao hàng.',
+    iffInvalid: 'Phản hồi 402 không chứa yêu cầu x402 v2 hợp lệ.',
+    iffUnavailable: 'Hiện không thể kiểm tra bằng chứng IFF.',
   },
 };
+
+const IFF_VERDICT_STYLE = {
+  consistent: 'border-emerald-700/50 bg-emerald-950/30 text-emerald-300',
+  diverged: 'border-red-700/50 bg-red-950/30 text-red-300',
+  stale: 'border-amber-700/50 bg-amber-950/30 text-amber-300',
+  unobserved: 'border-gray-700 bg-gray-900 text-gray-300',
+} as const;
 
 const AgentFindings: React.FC<AgentFindingsProps> = ({ agent, narrative, language = 'zh-TW' }) => {
   const [showDetails, setShowDetails] = useState(false);
@@ -101,6 +121,7 @@ const AgentFindings: React.FC<AgentFindingsProps> = ({ agent, narrative, languag
   const pageStatusInfo = (agent as any).pageStatus
     ? PAGE_STATUS_LABEL[(agent as any).pageStatus] ?? null
     : null;
+  const x402 = agent.x402Preflight;
 
   const hasTechnicalDetails =
     agent.redirectChain.length > 1 ||
@@ -131,6 +152,36 @@ const AgentFindings: React.FC<AgentFindingsProps> = ({ agent, narrative, languag
               </span>
             ))}
           </div>
+        </div>
+      )}
+
+      {x402 && (
+        <div className="mb-4 rounded-2xl border border-cyan-900/60 bg-cyan-950/20 p-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-widest text-cyan-300">{t.iffTitle}</div>
+            {x402.status === 'VERIFIED' && x402.verdict ? (
+              <span className={`rounded-full border px-3 py-1 font-mono text-xs ${IFF_VERDICT_STYLE[x402.verdict]}`}>
+                {x402.verdict.toUpperCase()}{x402.divergenceKind ? ` · ${x402.divergenceKind}` : ''}
+              </span>
+            ) : (
+              <span className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1 font-mono text-xs text-gray-300">
+                {x402.status}
+              </span>
+            )}
+          </div>
+          <p className="text-sm leading-relaxed text-gray-300">
+            {x402.status === 'INVALID_REQUIREMENT' ? t.iffInvalid : x402.status === 'UNAVAILABLE' ? t.iffUnavailable : t.iffBoundary}
+          </p>
+          {x402.status === 'VERIFIED' && (
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-gray-500">
+              {x402.ownershipStatus && <span>ownership · {x402.ownershipStatus}</span>}
+              <span>inclusion · {x402.inclusionAvailable ? 'available' : 'pending'}</span>
+              {x402.observedAt && <span>observed · {new Date(x402.observedAt).toLocaleString(language)}</span>}
+            </div>
+          )}
+          <a className="mt-3 inline-block text-xs text-cyan-300 hover:text-cyan-200" href="https://ifandonlyif.io/sdk" target="_blank" rel="noreferrer">
+            ifandonlyif.io SDK ↗
+          </a>
         </div>
       )}
 

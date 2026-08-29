@@ -3,11 +3,17 @@ import { head as mockBlobHead, list as mockBlobList, put as mockBlobPut } from '
 
 // Mock @google/genai BEFORE importing the handler, so the handler picks up the mock.
 const mockGenerateContent = vi.fn();
+const { mockIffVerify } = vi.hoisted(() => ({ mockIffVerify: vi.fn() }));
 vi.mock('@google/genai', () => ({
   GoogleGenAI: class {
     models = { generateContent: mockGenerateContent };
   },
 }));
+
+vi.mock('@ifandonlyif/x402-preflight', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@ifandonlyif/x402-preflight')>();
+  return { ...actual, verify: mockIffVerify };
+});
 
 // Mock DNS so the SSRF resolved-IP check never makes a real lookup. Default:
 // resolution "fails", so resolvesToPrivateIP returns false and the literal
@@ -33,6 +39,7 @@ vi.mock('@vercel/blob', () => ({
 // Each call returns a benign "empty" response so fact-gathering produces no data.
 beforeEach(() => {
   mockGenerateContent.mockReset();
+  mockIffVerify.mockReset();
   vi.mocked(mockBlobHead).mockClear();
   vi.mocked(mockBlobList).mockClear();
   vi.mocked(mockBlobPut).mockClear();
@@ -422,6 +429,74 @@ describe('POST /api/analyze — input hardening', () => {
     expect(res.statusCode).toBe(200);
     expect(res.jsonBody.agentVerification.pageStatus).toBe('blocked_private_target');
     expect(res.jsonBody.agentVerification.finalLandingPage).toBe('http://127.0.0.1/admin');
+  });
+
+  it('preflights an x402 payment requirement with IFF before surfacing the 402', async () => {
+    const { default: handler } = await import('../api/analyze');
+    const paymentRequired = {
+      x402Version: 2,
+      accepts: [{
+        scheme: 'exact',
+        network: 'eip155:8453',
+        asset: '0x0000000000000000000000000000000000000000',
+        amount: '1000',
+        payTo: '0x1111111111111111111111111111111111111111',
+      }],
+    };
+    const encoded = Buffer.from(JSON.stringify(paymentRequired), 'utf8').toString('base64');
+
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 45, sp: 55, v: 'Payment required', cn: 'Review before paying', b: 'x', d: 'x' }),
+      candidates: [{ groundingMetadata: {} }],
+    });
+    mockIffVerify.mockResolvedValueOnce({
+      url: 'https://merchant.example/pay',
+      verdict: 'consistent',
+      received: { set_fingerprint: 'received', option_fingerprints: ['option'] },
+      observed: {
+        set_fingerprint: 'observed', option_fingerprints: ['option'], observation_id: 'observation',
+        observed_at: '2026-08-29T06:00:00.000Z', probe_type: 'scheduled', monitor_id: 'iff-monitor',
+        monitor_public_key: 'key', report_hash: 'report-hash', monitor_signature: 'signature',
+      },
+      history: [],
+      unmatched_received_options: [],
+      ownership: { status: 'verified' },
+      inclusion: null,
+      disclaimer: 'Requirement consistency only.',
+    });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: any) => {
+      if (String(url) === 'https://merchant.example/pay') {
+        return new Response('', { status: 402, headers: { 'payment-required': encoded } });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }));
+
+    const res = makeRes();
+    await handler(
+      makeReq({ input: 'https://merchant.example/pay', inputType: 'URL', language: 'en' }, '198.51.100.44'),
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(mockIffVerify).toHaveBeenCalledWith(
+      'https://merchant.example/pay',
+      paymentRequired,
+      expect.objectContaining({ fetch: expect.any(Function) }),
+    );
+    expect(res.jsonBody.agentVerification).toMatchObject({
+      httpStatus: 402,
+      pageStatus: 'payment_required',
+      asksForPayment: true,
+      x402Preflight: {
+        provider: 'ifandonlyif.io',
+        status: 'VERIFIED',
+        verdict: 'consistent',
+        ownershipStatus: 'verified',
+      },
+    });
+    expect(res.jsonBody.agentVerification.riskObservations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'IFF x402 preflight', value: 'consistent', lane: 'CORROBORATED' }),
+    ]));
   });
 });
 

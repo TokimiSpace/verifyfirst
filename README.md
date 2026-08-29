@@ -26,10 +26,16 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
   acting for whom, its purpose, expiry, allowed scope, and forbidden scope
 - **Trust Timeline** — records grants, policy decisions, user confirmation,
   denial, and revocation with evidence identifiers
+- **Credential incident response** — parses vendor exposure notices locally,
+  compares environment-variable names without sending or storing secret values,
+  creates revoke/reissue/deploy/review/verify tasks, and seals completions into
+  the Trust Timeline with real SHA-256 evidence identifiers
 - **Migrant-worker demo** — Traditional Chinese, English, and Vietnamese flow
   for verifying recruiters without exposing residency data
-- **IFF evidence layer** — presents [ifandonlyif.io](https://ifandonlyif.io) as
-  the verifiable evidence layer while keeping protocol detail out of the main UX
+- **IFF x402 preflight** — uses the official
+  [`@ifandonlyif/x402-preflight`](https://ifandonlyif.io/sdk) SDK whenever the
+  sandbox observes an x402 `402 Payment Required`; it compares the received
+  requirement with independent evidence before any payment policy could run
 - **Hard blocklist floors** — confirmed Safe Browsing/ScamSniffer/VirusTotal
   hits clamp the verdict in code; the LLM cannot be talked out of them
 - **Cofacts integration** — crowd-sourced Taiwanese fact-check reports
@@ -53,7 +59,8 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
 2. Known example chips and allowlisted domains short-circuit with canned
    responses (zero upstream quota)
 3. Objective facts are gathered in parallel: RDAP, Safe Browsing, ScamSniffer,
-   VirusTotal, DNS, Cofacts, plus live page observation for URLs
+   VirusTotal, DNS, Cofacts, plus live page observation for URLs. An x402
+   `402` response is preflighted through IFF before it is surfaced.
 4. Gemini analyzes with search grounding, receiving the facts as ground truth
 5. Code-level post-processing: blocklist verdict floors, low-evidence
    normalization, and PII masking
@@ -75,11 +82,51 @@ but it cannot expand permissions or override a denial. The browser demo includes
 a reset control so judges can replay the full grant → confirm → revoke → denied
 sequence without external accounts.
 
+### IFF x402 preflight boundary
+
+The URL sandbox calls `@ifandonlyif/x402-preflight` only after receiving a
+valid x402 v2 payment requirement. VerifyFirst preserves IFF's four verdicts —
+`consistent`, `diverged`, `stale`, and `unobserved` — without turning them into
+a hidden trust score. A matching requirement is evidence of consistency, not a
+guarantee that payment is safe or that the endpoint will deliver afterward.
+The integration never holds a wallet key or executes a payment. Public checks
+need no API key; `IFF_BASE_URL` exists only for staging or local IFF instances.
+
+## Trust Pathways and Update Trust (hackathon demo pages)
+
+Two standalone static pages under `public/` back the Trustworthy AI Hackathon
+2026 submission (no React, no build step, synthetic data only):
+
+- **Demo video production kit** — the
+  [Track 05–06 ComfyUI + MiniMax plan](docs/demo-video/track-05-06-comfyui-minimax-production-plan.md)
+  prioritizes real Web screen recordings, with a 120-second storyboard,
+  finalized Traditional Chinese voice-over, MiniMax prompts, a second-computer
+  handoff, legal-safe labels, and explicit live／training／simulation boundaries.
+
+- **`/trust-pathways/`** — five pain-point pathways (manufacturing, payment,
+  government, migrant trust, RBA), a replayable 90-second judge tour, the GLEIF
+  vLEI trust-chain explainer, live GLEIF LEI lookup, GoPlus address risk, and a
+  call into the deployed keripy vLEI verifier (`services/vlei-verifier`).
+- **`/update-trust/`** — the vLEI *lifecycle* page. It loads the pinned
+  GLEIF-IT/vlei-verifier regression fixture (GLEIF → QVI → Legal Entity → ECR),
+  recomputes every Blake3 SAID, verifies Ed25519 KEL signatures with WebCrypto,
+  walks ACDC edges with the I2I rule, pins schema SAIDs to GLEIF-IT/vLEI-schema,
+  then issues a *proposed* short-lived Agent Delegation ACDC chained to the real
+  ECR credential, lets the supplier issue a carbon-footprint credential with
+  ACDC most-compact SAIDs so a presentation can disclose only the carbon block
+  (process／audit stay withheld as SAIDs yet every SAID still recomputes), and
+  shows how revocation, expiry, tampering and a production root-of-trust policy
+  each flip the decision to a machine-readable `DENY_*`.
+  All verifier logic lives in `public/update-trust/said.js` and is unit-tested
+  against the official BLAKE3 vectors and the fixture (`tests/update-trust.test.ts`).
+  Witness receipts, live key state and duplicity detection are explicitly left
+  to the backend verifier.
+
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20+
 - Google Gemini API key ([get one here](https://aistudio.google.com/app/apikey))
 
 ### Installation
@@ -130,6 +177,7 @@ npm test
 | `GOOGLE_SHEETS_WEBHOOK_URL` | No | Logs flat analysis summaries for human labeling |
 | `BOT_API_KEY` | No | `X-Bot-Key` header value that bypasses per-IP rate limiting |
 | `COFACTS_APP_ID` | No | App id sent to the Cofacts API (default `VERIFYFIRST_AI`) |
+| `IFF_BASE_URL` | No | IFF API override for staging/local testing; production defaults to `https://ifandonlyif.io` and needs no API key |
 
 ## Deployment
 
@@ -161,9 +209,12 @@ verify1st/
 ├── components/               # React UI (results panels, search, senior mode)
 ├── services/
 │   ├── agentPolicy.ts        # Deterministic Agent authorization gate
+│   ├── credentialIncident.ts # Local-only secret-name matching + response plan
 │   └── geminiService.ts      # Frontend client for /api/analyze
 ├── tests/                    # Vitest unit + handler integration tests
 ├── public/
+│   ├── trust-pathways/       # Hackathon demo: five pathways + judge tour + vLEI lab
+│   └── update-trust/         # vLEI lifecycle page: said.js verifier + pinned fixture
 ├── App.tsx
 ├── index.tsx
 ├── types.ts
