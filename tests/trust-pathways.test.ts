@@ -160,6 +160,20 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('function updateRubric(scene)');
   });
 
+  it('switches the score map with pain points 04, 05, and 06 outside the guided tour', () => {
+    expect(page).toContain('const scenarioRubrics={');
+    expect(page).toContain("government:{chapter:'PAIN POINT 04 · 政府服務'");
+    expect(page).toContain("migrant:{chapter:'PAIN POINT 05 · 移工數位信任'");
+    expect(page).toContain("rba:{chapter:'PAIN POINT 06 · RBA 供應鏈'");
+    expect(page).toContain('主辦方需求對照');
+    expect(page).toContain('CONDITIONAL READY · REQUIRE_HUMAN_CONFIRMATION');
+    expect(page).toContain('CREDENTIAL READY · ALLOW_CREDENTIAL_ISSUANCE');
+    expect(page).toContain('PARTIAL PASS · REQUIRE_EXCEPTION_REVIEW');
+    expect(page).toContain('function syncScenarioRubric()');
+    expect(page).toContain("if($('#judgeConsole').classList.contains('active'))return");
+    expect(page).toContain('syncScenarioRubric()');
+  });
+
   it('adds a pre-execution payment fraud checkpoint with user-controlled hold', () => {
     expect(page).toContain('PRE-EXECUTION CHECKPOINT');
     expect(page).toContain('HOLD_HIGH_RISK_TRANSFER');
