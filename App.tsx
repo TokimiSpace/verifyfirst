@@ -22,7 +22,8 @@ import CofactsFindings from './components/CofactsFindings';
 import ReportModal from './components/ReportModal';
 import AgentSandbox from './components/AgentSandbox';
 import SandboxControl from './components/SandboxControl';
-import { ShieldAlert, Search, Globe, CheckCircle2, AlertTriangle, Sparkles, ExternalLink, Accessibility, ChevronDown, ThumbsUp, ThumbsDown, RotateCcw, ArrowLeft, LockKeyhole, Boxes, SlidersHorizontal } from 'lucide-react';
+import CredentialIncidentResponse from './components/CredentialIncidentResponse';
+import { ShieldAlert, Search, Globe, CheckCircle2, AlertTriangle, Sparkles, ExternalLink, Accessibility, ChevronDown, ThumbsUp, ThumbsDown, RotateCcw, ArrowLeft, LockKeyhole, Boxes, SlidersHorizontal, KeyRound } from 'lucide-react';
 
 // UI Text dictionary for all static text
 const UI_TEXT = {
@@ -342,7 +343,7 @@ const LANDING_UI: Record<Language, {
   },
 };
 
-type AppView = 'SANDBOX' | 'CONTROL';
+type AppView = 'SANDBOX' | 'INCIDENT' | 'CONTROL';
 
 const createDemoGrant = (): AgentGrant => {
   const issuedAt = new Date();
@@ -569,6 +570,10 @@ const App: React.FC = () => {
               <Boxes size={14} />
               {language === 'zh-TW' ? '安全查核' : language === 'vi' ? 'Kiểm tra' : 'Safety check'}
             </button>
+            <button className={view === 'INCIDENT' ? 'is-active' : ''} onClick={() => setView('INCIDENT')}>
+              <KeyRound size={14} />
+              {language === 'zh-TW' ? '憑證應變' : language === 'vi' ? 'Ứng phó khóa' : 'Key response'}
+            </button>
             <button className={view === 'CONTROL' ? 'is-active' : ''} onClick={() => setView('CONTROL')}>
               <SlidersHorizontal size={14} />
               {language === 'zh-TW' ? '我的沙盒' : language === 'vi' ? 'Hộp cát của tôi' : 'My sandbox'}
@@ -628,6 +633,8 @@ const App: React.FC = () => {
           onRevoke={revokeGrant}
           onResetGrant={resetGrant}
         />
+      ) : view === 'INCIDENT' ? (
+        <CredentialIncidentResponse language={language} onBack={() => setView('SANDBOX')} />
       ) : (
       <main className="vf-container vf-main">
         {!analysis && loadingState === 'IDLE' && (

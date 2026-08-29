@@ -310,3 +310,51 @@ export interface TrustTimelineEvent {
   detail: string;
   evidenceId: string;
 }
+
+// ========== Credential exposure incident response ==========
+
+export type CredentialIncidentSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM';
+export type CredentialActionPhase = 'REVOKE' | 'REISSUE' | 'DEPLOY' | 'REVIEW' | 'VERIFY';
+export type CredentialActionStatus = 'PENDING' | 'COMPLETED';
+
+export interface CredentialService {
+  id: string;
+  label: string;
+  severity: CredentialIncidentSeverity;
+  matchedNames: string[];
+}
+
+export interface CredentialIncidentAnalysis {
+  id: string;
+  sourceUrl?: string;
+  detectedAt: string;
+  exposedNames: string[];
+  services: CredentialService[];
+}
+
+export interface CredentialInventoryMatch {
+  name: string;
+  service: string;
+  severity: CredentialIncidentSeverity;
+}
+
+export interface CredentialResponseAction {
+  id: string;
+  phase: CredentialActionPhase;
+  title: string;
+  detail: string;
+  affectedNames: string[];
+  owner: string;
+  status: CredentialActionStatus;
+  completedAt?: string;
+  evidenceId?: string;
+}
+
+export interface CredentialIncidentWorkspace {
+  version: 1;
+  analysis: CredentialIncidentAnalysis;
+  inventoryNames: string[];
+  matches: CredentialInventoryMatch[];
+  actions: CredentialResponseAction[];
+  timeline: TrustTimelineEvent[];
+}

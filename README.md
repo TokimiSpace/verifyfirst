@@ -26,6 +26,10 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
   acting for whom, its purpose, expiry, allowed scope, and forbidden scope
 - **Trust Timeline** — records grants, policy decisions, user confirmation,
   denial, and revocation with evidence identifiers
+- **Credential incident response** — parses vendor exposure notices locally,
+  compares environment-variable names without sending or storing secret values,
+  creates revoke/reissue/deploy/review/verify tasks, and seals completions into
+  the Trust Timeline with real SHA-256 evidence identifiers
 - **Migrant-worker demo** — Traditional Chinese, English, and Vietnamese flow
   for verifying recruiters without exposing residency data
 - **IFF x402 preflight** — uses the official
@@ -199,6 +203,7 @@ verify1st/
 ├── components/               # React UI (results panels, search, senior mode)
 ├── services/
 │   ├── agentPolicy.ts        # Deterministic Agent authorization gate
+│   ├── credentialIncident.ts # Local-only secret-name matching + response plan
 │   └── geminiService.ts      # Frontend client for /api/analyze
 ├── tests/                    # Vitest unit + handler integration tests
 ├── public/
