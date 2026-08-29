@@ -97,6 +97,12 @@ need no API key; `IFF_BASE_URL` exists only for staging or local IFF instances.
 Two standalone static pages under `public/` back the Trustworthy AI Hackathon
 2026 submission (no React, no build step, synthetic data only):
 
+- **Demo video production kit** — the
+  [Track 05–06 ComfyUI + MiniMax plan](docs/demo-video/track-05-06-comfyui-minimax-production-plan.md)
+  prioritizes real Web screen recordings, with a 120-second storyboard,
+  finalized Traditional Chinese voice-over, MiniMax prompts, a second-computer
+  handoff, legal-safe labels, and explicit live／training／simulation boundaries.
+
 - **`/trust-pathways/`** — five pain-point pathways (manufacturing, payment,
   government, migrant trust, RBA), a replayable 90-second judge tour, the GLEIF
   vLEI trust-chain explainer, live GLEIF LEI lookup, GoPlus address risk, and a
