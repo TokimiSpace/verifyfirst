@@ -102,10 +102,12 @@ export interface TrustTaggedValue {
 }
 
 export interface AgentVerification {
-  status: 'NOT_RUN' | 'OBSERVED_URL' | 'OBSERVED_PROFILE' | 'LIMITED';
+  status: 'NOT_RUN' | 'OBSERVED_URL' | 'OBSERVED_PROFILE' | 'BOT_BLOCKED' | 'NOT_FOUND' | 'LIMITED';
   originalUrl?: string;
   redirectChain: string[];
   finalLandingPage?: string;
+  httpStatus?: number | null;
+  pageStatus?: string;
   pageTitle?: string;
   visibleSummary?: string;
   forms: string[];
@@ -118,6 +120,27 @@ export interface AgentVerification {
   detectedPattern?: string;
   screenshots: string[];
   riskObservations: TrustTaggedValue[];
+  x402Preflight?: IffX402Preflight;
+}
+
+export type IffX402Verdict = 'consistent' | 'diverged' | 'stale' | 'unobserved';
+export type IffX402PreflightStatus = 'VERIFIED' | 'INVALID_REQUIREMENT' | 'UNAVAILABLE';
+
+export interface IffX402Preflight {
+  provider: 'ifandonlyif.io';
+  status: IffX402PreflightStatus;
+  verdict?: IffX402Verdict;
+  divergenceKind?: 'amount_only' | 'payee';
+  matchesLastObserved?: boolean;
+  known?: boolean;
+  ownershipStatus?: string;
+  observedAt?: string;
+  stableSince?: string;
+  monitorId?: string;
+  reportHash?: string;
+  inclusionAvailable: boolean;
+  disclaimer?: string;
+  errorCode?: string;
 }
 
 export interface OfficialRouteResolution {

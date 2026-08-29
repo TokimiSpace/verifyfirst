@@ -28,8 +28,10 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
   denial, and revocation with evidence identifiers
 - **Migrant-worker demo** — Traditional Chinese, English, and Vietnamese flow
   for verifying recruiters without exposing residency data
-- **IFF evidence layer** — presents [ifandonlyif.io](https://ifandonlyif.io) as
-  the verifiable evidence layer while keeping protocol detail out of the main UX
+- **IFF x402 preflight** — uses the official
+  [`@ifandonlyif/x402-preflight`](https://ifandonlyif.io/sdk) SDK whenever the
+  sandbox observes an x402 `402 Payment Required`; it compares the received
+  requirement with independent evidence before any payment policy could run
 - **Hard blocklist floors** — confirmed Safe Browsing/ScamSniffer/VirusTotal
   hits clamp the verdict in code; the LLM cannot be talked out of them
 - **Cofacts integration** — crowd-sourced Taiwanese fact-check reports
@@ -53,7 +55,8 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
 2. Known example chips and allowlisted domains short-circuit with canned
    responses (zero upstream quota)
 3. Objective facts are gathered in parallel: RDAP, Safe Browsing, ScamSniffer,
-   VirusTotal, DNS, Cofacts, plus live page observation for URLs
+   VirusTotal, DNS, Cofacts, plus live page observation for URLs. An x402
+   `402` response is preflighted through IFF before it is surfaced.
 4. Gemini analyzes with search grounding, receiving the facts as ground truth
 5. Code-level post-processing: blocklist verdict floors, low-evidence
    normalization, and PII masking
@@ -74,6 +77,16 @@ The policy gate is deterministic by design: model output can explain a risk,
 but it cannot expand permissions or override a denial. The browser demo includes
 a reset control so judges can replay the full grant → confirm → revoke → denied
 sequence without external accounts.
+
+### IFF x402 preflight boundary
+
+The URL sandbox calls `@ifandonlyif/x402-preflight` only after receiving a
+valid x402 v2 payment requirement. VerifyFirst preserves IFF's four verdicts —
+`consistent`, `diverged`, `stale`, and `unobserved` — without turning them into
+a hidden trust score. A matching requirement is evidence of consistency, not a
+guarantee that payment is safe or that the endpoint will deliver afterward.
+The integration never holds a wallet key or executes a payment. Public checks
+need no API key; `IFF_BASE_URL` exists only for staging or local IFF instances.
 
 ## Trust Pathways and Update Trust (hackathon demo pages)
 
@@ -103,7 +116,7 @@ Two standalone static pages under `public/` back the Trustworthy AI Hackathon
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20+
 - Google Gemini API key ([get one here](https://aistudio.google.com/app/apikey))
 
 ### Installation
@@ -154,6 +167,7 @@ npm test
 | `GOOGLE_SHEETS_WEBHOOK_URL` | No | Logs flat analysis summaries for human labeling |
 | `BOT_API_KEY` | No | `X-Bot-Key` header value that bypasses per-IP rate limiting |
 | `COFACTS_APP_ID` | No | App id sent to the Cofacts API (default `VERIFYFIRST_AI`) |
+| `IFF_BASE_URL` | No | IFF API override for staging/local testing; production defaults to `https://ifandonlyif.io` and needs no API key |
 
 ## Deployment
 

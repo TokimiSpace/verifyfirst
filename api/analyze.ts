@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { GoogleGenAI } from "@google/genai";
 import { BlobNotFoundError, head, list, put } from "@vercel/blob";
+import { preflightX402Response } from "../services/iffX402.js";
 import { isExampleInput, getExampleResponse } from "./example-responses.js";
 import { isKnownSafeUrl, getSafeResponse } from "./safe-domains.js";
 
@@ -1610,6 +1611,12 @@ async function observeUrl(targetUrl: string): Promise<any> {
       continue;
     }
 
+    // Preserve a clone for IFF x402 preflight before consuming the response.
+    // IFF compares the requirement with independent evidence; it never pays.
+    const x402Preflight = status === 402
+      ? await preflightX402Response(current, res.clone())
+      : null;
+
     // Read body (cap at 200KB without buffering larger payloads)
     const html = await readBodyCapped(res, 200000);
 
@@ -1636,14 +1643,15 @@ async function observeUrl(targetUrl: string): Promise<any> {
         redirectChain: chain,
         finalLandingPage: current,
         httpStatus: status,
-        pageStatus: status === 404 ? 'not_found' : status === 403 ? 'forbidden' : 'server_error',
+        pageStatus: status === 402 ? 'payment_required' : status === 404 ? 'not_found' : status === 403 ? 'forbidden' : 'server_error',
         forms: [],
         ctaButtons: [],
         asksForLogin: false,
         asksForOtp: false,
-        asksForPayment: false,
+        asksForPayment: status === 402,
         asksForAppDownload: false,
         asksToAddChat: false,
+        x402Preflight: x402Preflight ?? undefined,
       };
     }
 
@@ -1763,6 +1771,7 @@ async function buildAgentVerification(normalizedInput: any, inputType: string): 
       not_found:                    { label: '頁面狀態', value: '404 頁面不存在', lane: 'OBSERVED' },
       forbidden:                    { label: '頁面狀態', value: '403 存取被拒絕', lane: 'OBSERVED' },
       server_error:                 { label: '頁面狀態', value: `HTTP ${observed.httpStatus} 伺服器錯誤`, lane: 'OBSERVED' },
+      payment_required:             { label: '頁面狀態', value: 'HTTP 402 要求 x402 付款', lane: 'OBSERVED' },
       bot_challenge:                { label: '頁面狀態', value: '反爬蟲保護（Cloudflare 等）', lane: 'OBSERVED' },
       timeout:                      { label: '頁面狀態', value: '連線逾時', lane: 'UNVERIFIED' },
       network_error:                { label: '頁面狀態', value: '無法連線', lane: 'UNVERIFIED' },
@@ -1780,6 +1789,17 @@ async function buildAgentVerification(normalizedInput: any, inputType: string): 
       observed.asksForLogin  && { label: '要求登入', value: '是', lane: 'OBSERVED' },
       observed.asksForOtp    && { label: '要求 OTP', value: '是', lane: 'OBSERVED' },
       observed.asksForPayment && { label: '要求付款', value: '是', lane: 'OBSERVED' },
+      observed.x402Preflight && {
+        label: 'IFF x402 preflight',
+        value: observed.x402Preflight.status === 'VERIFIED'
+          ? `${observed.x402Preflight.verdict}${observed.x402Preflight.divergenceKind ? ` · ${observed.x402Preflight.divergenceKind}` : ''}`
+          : observed.x402Preflight.status === 'INVALID_REQUIREMENT'
+            ? 'invalid requirement'
+            : 'temporarily unavailable',
+        lane: observed.x402Preflight.status === 'VERIFIED' && ['consistent', 'diverged'].includes(observed.x402Preflight.verdict)
+          ? 'CORROBORATED'
+          : 'UNVERIFIED',
+      },
       observed.asksForAppDownload && { label: '要求下載 App', value: '是', lane: 'OBSERVED' },
       observed.asksToAddChat && { label: '要求外部聊天', value: '是', lane: 'OBSERVED' },
       observed.detectedPattern && { label: '頁型判斷', value: observed.detectedPattern, lane: 'MODEL_INFERENCE' },
@@ -1852,6 +1872,12 @@ function buildAgentSummaryForPrompt(av: any): string {
   if (flags.length > 0) lines.push(`Page asks user to provide/do: ${flags.join(', ')}`);
   if (av.ctaButtons?.length > 0) lines.push(`CTA buttons found: ${av.ctaButtons.slice(0, 6).join(' | ')}`);
   if (av.detectedPattern) lines.push(`Detected page type pattern: ${av.detectedPattern}`);
+  if (av.x402Preflight) {
+    lines.push(`IFF x402 preflight status: ${av.x402Preflight.status}`);
+    if (av.x402Preflight.verdict) lines.push(`IFF x402 verdict: ${av.x402Preflight.verdict}`);
+    if (av.x402Preflight.divergenceKind) lines.push(`IFF divergence kind: ${av.x402Preflight.divergenceKind}`);
+    lines.push('IFF boundary: this compares the received payment requirement with independent evidence; it is not a payment-safety or delivery guarantee.');
+  }
   lines.push('=== END AGENT FINDINGS ===');
   return lines.join('\n');
 }

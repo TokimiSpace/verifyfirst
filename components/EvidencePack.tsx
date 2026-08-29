@@ -90,6 +90,20 @@ function buildEvidenceText(analysis: TruthGuardAnalysis, t: typeof TRANSLATIONS.
     lines.push(`Agent final page: ${analysis.agentVerification.finalLandingPage || 'N/A'}`);
     lines.push(`Agent page title: ${analysis.agentVerification.pageTitle || 'N/A'}`);
     lines.push(`Agent redirect chain: ${analysis.agentVerification.redirectChain.join(' -> ') || 'N/A'}`);
+
+    const x402 = analysis.agentVerification.x402Preflight;
+    if (x402) {
+      lines.push('');
+      lines.push('IFF x402 preflight:');
+      lines.push(`  Status: ${x402.status}`);
+      lines.push(`  Verdict: ${x402.verdict || 'N/A'}`);
+      if (x402.divergenceKind) lines.push(`  Divergence: ${x402.divergenceKind}`);
+      if (x402.ownershipStatus) lines.push(`  Ownership: ${x402.ownershipStatus}`);
+      if (x402.observedAt) lines.push(`  Observed at: ${x402.observedAt}`);
+      if (x402.reportHash) lines.push(`  IFF report hash: ${x402.reportHash}`);
+      lines.push(`  Transparency-log inclusion: ${x402.inclusionAvailable ? 'available' : 'pending / unavailable'}`);
+      lines.push('  Boundary: requirement-consistency evidence only; not a payment-safety or delivery guarantee.');
+    }
   }
 
   lines.push('');
