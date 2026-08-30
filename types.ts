@@ -278,6 +278,7 @@ export interface AgentGrant {
   status: AgentGrantStatus;
   issuedAt: string;
   expiresAt: string;
+  allowedTargets: string[];
   allowedActions: AgentActionKind[];
   confirmationActions: AgentActionKind[];
   deniedActions: AgentActionKind[];
@@ -298,6 +299,21 @@ export interface AgentPolicyResult {
   reason: string;
   matchedRule: string;
   evaluatedAt: string;
+}
+
+export interface AgentEvidencePacket {
+  schema: 'verifyfirst.agent-decision.v1';
+  id: string;
+  createdAt: string;
+  policyVersion: 'verifyfirst.sandbox-policy.v1';
+  grant: AgentGrant;
+  request: AgentActionRequest;
+  result: AgentPolicyResult;
+  parentEvidenceId?: string;
+  integrity: {
+    algorithm: 'SHA-256';
+    digest: string;
+  };
 }
 
 export interface TrustTimelineEvent {

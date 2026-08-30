@@ -1,7 +1,7 @@
 {
   "name": "verify1st",
   "version": "1.0.0",
-  "description": "First-step scam verification engine — analyzes suspicious messages, links, and phone numbers for Taiwan users",
+  "description": "Verifiable action sandbox and deterministic policy gate for AI Agents, with content risk checks and x402 preflight",
   "type": "module",
   "engines": {
     "node": ">=20"

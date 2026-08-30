@@ -19,9 +19,9 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
   ScamSniffer crypto-phishing blocklist, VirusTotal, DNS resolution
 - **Agent sandbox** — server-side page observation: follows redirect chains
   (HTTP + meta-refresh/JS), detects login/OTP/payment/APK-download asks
-- **Agent Filter** — deterministic authorization policy runs before model or
-  tool execution; read-only checks can pass, personal-data submission requires
-  confirmation, and login/payment/OTP/download actions are denied
+- **Usable Agent policy gate** — submit a real action, target, purpose, and
+  field-name list in the UI or through `POST /api/agent-policy`; the
+  deterministic gate returns `ALLOW`, `REQUIRE_CONFIRMATION`, or `DENY`
 - **Revocable authorization** — a visible control surface shows which Agent is
   acting for whom, its purpose, expiry, allowed scope, and forbidden scope
 - **Trust Timeline** — records grants, policy decisions, user confirmation,
@@ -30,8 +30,12 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
   compares environment-variable names without sending or storing secret values,
   creates revoke/reissue/deploy/review/verify tasks, and seals completions into
   the Trust Timeline with real SHA-256 evidence identifiers
-- **Migrant-worker demo** — Traditional Chinese, English, and Vietnamese flow
-  for verifying recruiters without exposing residency data
+- **Portable Evidence Packets** — every Agent policy decision is sealed as
+  complete JSON with a SHA-256 digest; a human approval links back to the
+  preceding confirmation packet
+- **Local policy workspace** — edit Agent, represented user, purpose, expiry,
+  target allowlist, and action rules; state persists on the device and the
+  complete audit workspace can be exported
 - **IFF x402 preflight** — uses the official
   [`@ifandonlyif/x402-preflight`](https://ifandonlyif.io/sdk) SDK whenever the
   sandbox observes an x402 `402 Payment Required`; it compares the received
@@ -72,15 +76,54 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
 
 1. Resolve the Agent identity and the user it represents
 2. Reject a mismatched, expired, or revoked grant before any tool runs
-3. Compare the requested action with the grant's allow / confirm / deny lists
-4. Keep URL observation and public-data checks read-only inside the sandbox
-5. Require a human before any personal data can be submitted
-6. Log the decision and evidence identifier in the Trust Timeline
+3. Require the request purpose and target to match the short-lived mandate
+4. Compare the requested action with the grant's allow / confirm / deny lists
+5. Cap personal data, login, OTP, and downloads at human confirmation; never
+   sign or execute payment
+6. Seal the full result into an Evidence Packet and log it in Trust Timeline
 
 The policy gate is deterministic by design: model output can explain a risk,
-but it cannot expand permissions or override a denial. The browser demo includes
-a reset control so judges can replay the full grant → confirm → revoke → denied
-sequence without external accounts.
+but it cannot expand permissions or override a denial. The browser workspace is
+functional without an external account and persists locally. Its authorization
+is caller-supplied sandbox policy—not a cryptographically verified production
+Mandate. A production caller must verify vLEI / signed Mandate evidence before
+consuming the decision.
+
+### Agent Policy API
+
+`POST /api/agent-policy` accepts `{ grant, request }` and returns a deterministic
+policy result, a SHA-256 Evidence Packet, and an explicit
+`execution.status: "NOT_EXECUTED"` boundary. It never receives secret values;
+`dataFields` contains names only.
+
+```bash
+curl -X POST https://verify1st.tw/api/agent-policy \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "grant": {
+      "id": "grant_01",
+      "agentId": "agent_01",
+      "agentName": "Compliance Agent",
+      "agentPurpose": "Inspect supplier records",
+      "userName": "Risk owner",
+      "status": "ACTIVE",
+      "issuedAt": "2026-08-30T00:00:00.000Z",
+      "expiresAt": "2026-08-31T00:00:00.000Z",
+      "allowedTargets": ["https://supplier.example"],
+      "allowedActions": ["OBSERVE_URL"],
+      "confirmationActions": ["SUBMIT_PERSONAL_DATA"],
+      "deniedActions": ["LOGIN", "PAYMENT", "REQUEST_OTP", "DOWNLOAD_APP"]
+    },
+    "request": {
+      "id": "req_01",
+      "grantId": "grant_01",
+      "action": "OBSERVE_URL",
+      "target": "https://supplier.example/profile/42",
+      "purpose": "Inspect supplier records",
+      "dataFields": []
+    }
+  }'
+```
 
 ### IFF x402 preflight boundary
 
@@ -204,11 +247,14 @@ npm run preview
 verify1st/
 ├── api/
 │   ├── analyze.ts            # Serverless endpoint: pre-checks → Gemini → post-processing
+│   ├── agent-policy.ts       # Deterministic Agent gate + SHA-256 evidence
 │   ├── example-responses.ts  # Canned responses for demo chips (zero quota)
 │   └── safe-domains.ts       # Self/known-safe allowlist short-circuit
 ├── components/               # React UI (results panels, search, senior mode)
 ├── services/
 │   ├── agentPolicy.ts        # Deterministic Agent authorization gate
+│   ├── agentEvidence.ts      # Canonical Evidence Packet hashing
+│   ├── agentGateway.ts       # Server gate client with local static-host fallback
 │   ├── credentialIncident.ts # Local-only secret-name matching + response plan
 │   └── geminiService.ts      # Frontend client for /api/analyze
 ├── tests/                    # Vitest unit + handler integration tests

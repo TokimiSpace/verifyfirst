@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Analytics } from '@vercel/analytics/react';
-import { AgentGrant, TruthGuardAnalysis, LoadingState, Language, InputType, TrustTimelineEvent } from './types';
+import { AgentEvidencePacket, AgentGrant, TruthGuardAnalysis, LoadingState, Language, InputType, TrustTimelineEvent } from './types';
 import { analyzeTruthGuard, APIError } from './services/geminiService';
 import SearchInput from './components/SearchInput';
 import TrustMeter from './components/TrustMeter';
@@ -23,7 +23,7 @@ import ReportModal from './components/ReportModal';
 import AgentSandbox from './components/AgentSandbox';
 import SandboxControl from './components/SandboxControl';
 import CredentialIncidentResponse from './components/CredentialIncidentResponse';
-import { ShieldAlert, Search, Globe, CheckCircle2, AlertTriangle, Sparkles, ExternalLink, Accessibility, ChevronDown, ThumbsUp, ThumbsDown, RotateCcw, ArrowLeft, LockKeyhole, Boxes, SlidersHorizontal, KeyRound } from 'lucide-react';
+import { ShieldAlert, Search, Globe, CheckCircle2, AlertTriangle, Sparkles, ExternalLink, Accessibility, ChevronDown, ThumbsUp, ThumbsDown, RotateCcw, ArrowLeft, ArrowRight, LockKeyhole, Boxes, SlidersHorizontal, KeyRound, Bot, Building2, Landmark, Factory, ShieldCheck, CircleDollarSign, Wrench } from 'lucide-react';
 
 // UI Text dictionary for all static text
 const UI_TEXT = {
@@ -36,10 +36,10 @@ const UI_TEXT = {
     seniorModeOff: '👴 Senior Mode',
     seniorModeDesc: 'Larger text · Simpler results',
     hero: {
-      title: 'Not sure?',
-      titleHighlight: 'Sandbox it first.',
-      subtitle: 'Safety gateway for people and Agents',
-      description: 'One safe place for suspicious links, messages, identities, and Agent actions. We inspect first, then let you continue, confirm, or stop.',
+      title: 'Before an Agent acts,',
+      titleHighlight: 'VerifyFirst.',
+      subtitle: 'The verifiable action sandbox for AI Agents',
+      description: 'Agents complete tasks. VerifyFirst checks identity, authorization, target, and risk before tools run—then allows, asks for confirmation, or denies.',
       descriptionSenior: 'Paste the suspicious message, ad, short link, phone number, or account here first.'
     },
     loading: {
@@ -121,10 +121,10 @@ const UI_TEXT = {
     seniorModeOff: '👴 長輩模式',
     seniorModeDesc: '大字版・適合長者使用',
     hero: {
-      title: '不確定？',
-      titleHighlight: '先丟進沙盒。',
-      subtitle: '人與 Agent 共用的安全閘門',
-      description: '可疑連結、訊息、身份與 Agent 動作，都從同一個入口先檢查。結果只告訴你三件事：可以繼續、需要你確認，或已經攔下。',
+      title: 'Agent 要做事？',
+      titleHighlight: '先通過 VerifyFirst。',
+      subtitle: 'AI Agent 的可驗證執行沙盒',
+      description: 'Agent 負責完成任務；VerifyFirst 在工具執行前驗證身分、授權、目標與風險，決定允許、需要本人確認或拒絕。',
       descriptionSenior: '把可疑訊息、廣告、短網址、電話或帳號先貼進來，我們先幫你驗證。'
     },
     loading: {
@@ -206,10 +206,10 @@ const UI_TEXT = {
     seniorModeOff: '👴 Chế độ cao tuổi',
     seniorModeDesc: 'Chữ lớn · Dành cho người cao tuổi',
     hero: {
-      title: 'Không chắc?',
-      titleHighlight: 'Cho vào hộp cát trước.',
-      subtitle: 'Cổng an toàn chung cho người và Agent',
-      description: 'Liên kết, tin nhắn, danh tính và hành động Agent đáng ngờ đều được kiểm tra tại một nơi. Kết quả chỉ có ba lựa chọn: tiếp tục, cần bạn xác nhận, hoặc đã chặn.',
+      title: 'Trước khi Agent hành động,',
+      titleHighlight: 'hãy VerifyFirst.',
+      subtitle: 'Hộp cát thực thi có thể xác minh cho AI Agent',
+      description: 'Agent hoàn thành công việc; VerifyFirst kiểm tra danh tính, ủy quyền, mục tiêu và rủi ro trước khi công cụ chạy, rồi cho phép, yêu cầu xác nhận hoặc từ chối.',
       descriptionSenior: 'Dán tin nhắn, quảng cáo, liên kết ngắn, số điện thoại hoặc tài khoản đáng ngờ vào đây trước.'
     },
     loading: {
@@ -292,71 +292,146 @@ const LANG_OPTIONS: { code: Language; label: string }[] = [
 
 const LANDING_UI: Record<Language, {
   eyebrow: string;
+  headerSubtitle: string;
   boundaryTitle: string;
   boundaryBody: string;
+  tray: [string, string, string];
   seniorTitle: string;
   seniorBody: string;
   seniorAction: string;
   capabilities: Array<{ title: string; description: string }>;
+  logicEyebrow: string;
+  logicTitle: string;
+  logicBody: string;
+  audienceLabel: string;
+  audiences: Array<{ title: string; description: string }>;
+  painLabel: string;
+  pains: Array<{ title: string; description: string }>;
+  x402Title: string;
+  x402Body: string;
+  x402Tags: [string, string, string];
 }> = {
   'zh-TW': {
-    eyebrow: 'VERIFYFIRST TRUST GATEWAY',
-    boundaryTitle: '沙盒先看，政策再放行',
-    boundaryBody: '網址在隔離環境觀察；Agent 的登入、付款、下載與 OTP 動作一律先擋下。',
+    eyebrow: 'VERIFYFIRST · AGENT TRUST SANDBOX',
+    headerSubtitle: 'AI Agent 可驗證執行沙盒',
+    boundaryTitle: 'Agent 做事；VerifyFirst 決定它可不可以做。',
+    boundaryBody: '所有登入、付款、資料送出與工具呼叫都先經過確定性政策；AI 可以提供線索，但不能覆寫授權。',
+    tray: ['REQUEST', 'VERIFY', 'DECIDE'],
     seniorTitle: '給長輩使用大字版',
     seniorBody: '更大的字、更短的說明與更直接的下一步。',
     seniorAction: '開啟',
     capabilities: [
-      { title: '內容進沙盒', description: '隔離開啟連結、追蹤轉址與頁面行為' },
-      { title: '身份有依據', description: '比對官方資料、工具來源與 IFF 證據' },
-      { title: '動作過濾', description: 'Agent 執行前先核對授權與風險政策' },
-      { title: '決定可追溯', description: '放行、確認、攔截與撤銷全部留下紀錄' },
+      { title: 'vLEI 身分', description: '驗證組織、代表人與可追溯的發證權限' },
+      { title: '短效 Mandate', description: '限定這次任務的目的、目標、動作與期限' },
+      { title: '政策閘門', description: '工具執行前決定允許、確認或拒絕' },
+      { title: '證據＋撤銷', description: '封裝決策證據；撤銷後的後續請求立即失敗' },
     ],
+    logicEyebrow: 'WHO / PAIN / CONTROL',
+    logicTitle: '把 Agent 的每次執行，變成可驗證的決策。',
+    logicBody: '給正在導入 AI Agent、但不能接受黑箱授權與事後補救的組織。實際操作人通常是法遵、風控與資安團隊。',
+    audienceLabel: '目標客戶',
+    audiences: [
+      { title: '品牌商／製造商', description: '供應鏈與 RBA 合規' },
+      { title: '金融／電支', description: '開戶、支付與高風險工具' },
+      { title: '政府／公共服務', description: '補助、資格與跨機關流程' },
+    ],
+    painLabel: '解決問題',
+    pains: [
+      { title: '身分不明', description: '不知道 Agent 代表誰、憑什麼行動' },
+      { title: '權限過大', description: '一次授權被擴張成登入、付款與個資存取' },
+      { title: '事後難追責', description: '只剩系統 log，無法還原誰授權、何時撤銷' },
+    ],
+    x402Title: 'x402 + IFF 付款前查驗',
+    x402Body: '收到 HTTP 402 時，核對金額、資產與收款方的一致性；VerifyFirst 不持有私鑰，也不替 Agent 簽名或付款。',
+    x402Tags: ['金額一致性', '收款方變更偵測', '不碰私鑰'],
   },
   en: {
-    eyebrow: 'VERIFYFIRST TRUST GATEWAY',
-    boundaryTitle: 'Inspect first. Release by policy.',
-    boundaryBody: 'Links open in isolation. Agent login, payment, download, and OTP actions are stopped at the gate.',
+    eyebrow: 'VERIFYFIRST · AGENT TRUST SANDBOX',
+    headerSubtitle: 'Verifiable action sandbox for AI agents',
+    boundaryTitle: 'Agents act. VerifyFirst decides whether they may.',
+    boundaryBody: 'Logins, payments, data submissions, and tool calls pass through deterministic policy first. AI may provide evidence; it cannot override authorization.',
+    tray: ['REQUEST', 'VERIFY', 'DECIDE'],
     seniorTitle: 'Switch to Senior Mode',
     seniorBody: 'Larger type, shorter explanations, and clearer next steps.',
     seniorAction: 'Turn on',
     capabilities: [
-      { title: 'Isolate content', description: 'Open links safely and trace redirects and behavior' },
-      { title: 'Verify identity', description: 'Check official data, tool sources, and IFF evidence' },
-      { title: 'Filter actions', description: 'Check Agent authorization and policy before execution' },
-      { title: 'Trace decisions', description: 'Log release, confirmation, denial, and revocation' },
+      { title: 'vLEI identity', description: 'Verify organizations, representatives, and issuer authority' },
+      { title: 'Short-lived mandate', description: 'Bind purpose, target, actions, and expiry to one task' },
+      { title: 'Policy gate', description: 'Allow, confirm, or deny before a tool executes' },
+      { title: 'Evidence + revoke', description: 'Seal decisions and fail subsequent calls after revocation' },
     ],
+    logicEyebrow: 'WHO / PAIN / CONTROL',
+    logicTitle: 'Turn every Agent action into a verifiable decision.',
+    logicBody: 'For organizations adopting AI Agents without accepting opaque authorization or after-the-fact controls. Operated by compliance, risk, and security teams.',
+    audienceLabel: 'Built for',
+    audiences: [
+      { title: 'Brands / manufacturers', description: 'Supply-chain and RBA compliance' },
+      { title: 'Finance / payments', description: 'Onboarding, payments, and high-risk tools' },
+      { title: 'Government / public service', description: 'Benefits, eligibility, and cross-agency workflows' },
+    ],
+    painLabel: 'Problems solved',
+    pains: [
+      { title: 'Unknown identity', description: 'No reliable answer to whom an Agent represents' },
+      { title: 'Excess authority', description: 'A broad token expands into login, payment, and PII access' },
+      { title: 'Weak accountability', description: 'Logs cannot reconstruct who authorized what or when it was revoked' },
+    ],
+    x402Title: 'x402 + IFF payment preflight',
+    x402Body: 'On HTTP 402, compare amount, asset, and payee with independent evidence. VerifyFirst never holds keys, signs, or pays for the Agent.',
+    x402Tags: ['Amount consistency', 'Payee change detection', 'No private keys'],
   },
   vi: {
-    eyebrow: 'VERIFYFIRST TRUST GATEWAY',
-    boundaryTitle: 'Kiểm tra trước. Chỉ cho phép theo chính sách.',
-    boundaryBody: 'Liên kết mở trong môi trường cách ly. Đăng nhập, thanh toán, tải ứng dụng và OTP của Agent bị chặn tại cổng.',
+    eyebrow: 'VERIFYFIRST · AGENT TRUST SANDBOX',
+    headerSubtitle: 'Hộp cát thực thi có thể xác minh cho AI Agent',
+    boundaryTitle: 'Agent hành động; VerifyFirst quyết định có được phép hay không.',
+    boundaryBody: 'Đăng nhập, thanh toán, gửi dữ liệu và gọi công cụ đều qua chính sách xác định trước. AI có thể cung cấp bằng chứng nhưng không thể ghi đè ủy quyền.',
+    tray: ['REQUEST', 'VERIFY', 'DECIDE'],
     seniorTitle: 'Bật chế độ chữ lớn',
     seniorBody: 'Chữ lớn hơn, giải thích ngắn hơn và bước tiếp theo rõ ràng hơn.',
     seniorAction: 'Bật',
     capabilities: [
-      { title: 'Cách ly nội dung', description: 'Mở liên kết an toàn, theo dõi chuyển hướng và hành vi' },
-      { title: 'Xác minh danh tính', description: 'Kiểm tra dữ liệu chính thức, nguồn công cụ và bằng chứng IFF' },
-      { title: 'Lọc hành động', description: 'Kiểm tra ủy quyền và chính sách trước khi Agent chạy' },
-      { title: 'Theo dõi quyết định', description: 'Ghi lại cho phép, xác nhận, từ chối và thu hồi' },
+      { title: 'Danh tính vLEI', description: 'Xác minh tổ chức, người đại diện và quyền phát hành' },
+      { title: 'Mandate ngắn hạn', description: 'Giới hạn mục đích, mục tiêu, hành động và thời hạn' },
+      { title: 'Cổng chính sách', description: 'Cho phép, xác nhận hoặc từ chối trước khi công cụ chạy' },
+      { title: 'Bằng chứng + thu hồi', description: 'Đóng gói quyết định; yêu cầu sau thu hồi thất bại ngay' },
     ],
+    logicEyebrow: 'WHO / PAIN / CONTROL',
+    logicTitle: 'Biến mọi hành động Agent thành quyết định có thể xác minh.',
+    logicBody: 'Dành cho tổ chức triển khai AI Agent nhưng không chấp nhận ủy quyền hộp đen và xử lý sau sự cố. Nhóm vận hành thường là tuân thủ, rủi ro và an ninh.',
+    audienceLabel: 'Khách hàng mục tiêu',
+    audiences: [
+      { title: 'Thương hiệu / nhà máy', description: 'Chuỗi cung ứng và tuân thủ RBA' },
+      { title: 'Tài chính / thanh toán', description: 'Mở tài khoản, thanh toán và công cụ rủi ro cao' },
+      { title: 'Chính phủ / dịch vụ công', description: 'Trợ cấp, điều kiện và quy trình liên cơ quan' },
+    ],
+    painLabel: 'Vấn đề giải quyết',
+    pains: [
+      { title: 'Danh tính không rõ', description: 'Không biết Agent đại diện ai và dựa trên quyền nào' },
+      { title: 'Quyền quá rộng', description: 'Một lần cấp quyền mở rộng thành đăng nhập, thanh toán và PII' },
+      { title: 'Khó truy trách nhiệm', description: 'Log không cho biết ai cấp quyền hay thời điểm thu hồi' },
+    ],
+    x402Title: 'Kiểm tra trước x402 + IFF',
+    x402Body: 'Khi nhận HTTP 402, đối chiếu số tiền, tài sản và người nhận. VerifyFirst không giữ khóa, ký hoặc thanh toán thay Agent.',
+    x402Tags: ['Nhất quán số tiền', 'Phát hiện đổi người nhận', 'Không giữ khóa riêng'],
   },
 };
 
 type AppView = 'SANDBOX' | 'INCIDENT' | 'CONTROL';
 
-const createDemoGrant = (): AgentGrant => {
+const AGENT_WORKSPACE_KEY = 'verifyfirst.agent-workspace.v1';
+
+const createDefaultGrant = (): AgentGrant => {
   const issuedAt = new Date();
   const expiresAt = new Date(issuedAt.getTime() + 24 * 60 * 60 * 1000);
   return {
-    id: 'grant_worker_safe_demo',
-    agentId: 'agent_worker_assist_v1',
-    agentName: '安心工作 Agent',
-    agentPurpose: '查驗雇主、仲介與徵才資訊',
-    userName: 'Nguyễn An',
+    id: `grant_${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : issuedAt.getTime().toString(36)}`,
+    agentId: 'agent-sandbox-01',
+    agentName: '我的 Agent',
+    agentPurpose: '在執行前查驗公開資訊',
+    userName: '本機使用者',
     status: 'ACTIVE',
     issuedAt: issuedAt.toISOString(),
     expiresAt: expiresAt.toISOString(),
+    allowedTargets: ['https://example.com'],
     allowedActions: ['OBSERVE_URL', 'CHECK_IDENTITY', 'READ_PUBLIC_DATA'],
     confirmationActions: ['SUBMIT_PERSONAL_DATA'],
     deniedActions: ['LOGIN', 'PAYMENT', 'REQUEST_OTP', 'DOWNLOAD_APP'],
@@ -370,16 +445,45 @@ const initialTimeline = (grant: AgentGrant): TrustTimelineEvent[] => [{
   action: 'GRANT_ISSUED',
   target: grant.agentName,
   decision: 'INFO',
-  detail: '24-hour limited authorization',
-  evidenceId: 'sha256:72f4390e8bf8d9f4',
+  detail: 'Local 24-hour sandbox authorization',
+  evidenceId: `local:grant-created:${grant.id}`,
 }];
 
+interface AgentWorkspace {
+  grant: AgentGrant;
+  timeline: TrustTimelineEvent[];
+  evidencePackets: AgentEvidencePacket[];
+}
+
+const loadAgentWorkspace = (): AgentWorkspace => {
+  const fallback = createDefaultGrant();
+  if (typeof window === 'undefined') return { grant: fallback, timeline: initialTimeline(fallback), evidencePackets: [] };
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(AGENT_WORKSPACE_KEY) || '') as Partial<AgentWorkspace>;
+    if (parsed.grant
+      && Array.isArray(parsed.grant.allowedTargets)
+      && Array.isArray(parsed.grant.allowedActions)
+      && Array.isArray(parsed.grant.confirmationActions)
+      && Array.isArray(parsed.grant.deniedActions)) {
+      return {
+        grant: parsed.grant,
+        timeline: Array.isArray(parsed.timeline) ? parsed.timeline : initialTimeline(parsed.grant),
+        evidencePackets: Array.isArray(parsed.evidencePackets) ? parsed.evidencePackets : [],
+      };
+    }
+  } catch {
+    // A corrupt local workspace must not prevent the safety gate from loading.
+  }
+  return { grant: fallback, timeline: initialTimeline(fallback), evidencePackets: [] };
+};
+
 const App: React.FC = () => {
-  const initialGrantRef = useRef<AgentGrant>(createDemoGrant());
+  const initialWorkspaceRef = useRef<AgentWorkspace>(loadAgentWorkspace());
   const [language, setLanguage] = useState<Language>('zh-TW');
   const [view, setView] = useState<AppView>('SANDBOX');
-  const [grant, setGrant] = useState<AgentGrant>(initialGrantRef.current);
-  const [trustTimeline, setTrustTimeline] = useState<TrustTimelineEvent[]>(() => initialTimeline(initialGrantRef.current));
+  const [grant, setGrant] = useState<AgentGrant>(initialWorkspaceRef.current.grant);
+  const [trustTimeline, setTrustTimeline] = useState<TrustTimelineEvent[]>(initialWorkspaceRef.current.timeline);
+  const [evidencePackets, setEvidencePackets] = useState<AgentEvidencePacket[]>(initialWorkspaceRef.current.evidencePackets);
   const [loadingState, setLoadingState] = useState<LoadingState>('IDLE');
   const [analysis, setAnalysis] = useState<TruthGuardAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -401,6 +505,14 @@ const App: React.FC = () => {
     setTrustTimeline(current => [event, ...current].slice(0, 20));
   }, []);
 
+  const appendEvidencePacket = useCallback((packet: AgentEvidencePacket) => {
+    setEvidencePackets(current => [packet, ...current.filter(item => item.id !== packet.id)].slice(0, 50));
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(AGENT_WORKSPACE_KEY, JSON.stringify({ grant, timeline: trustTimeline, evidencePackets }));
+  }, [grant, trustTimeline, evidencePackets]);
+
   const revokeGrant = useCallback(() => {
     setGrant(current => ({ ...current, status: 'REVOKED' }));
     const now = new Date().toISOString();
@@ -417,10 +529,25 @@ const App: React.FC = () => {
   }, [appendTimeline, grant.agentName, grant.userName]);
 
   const resetGrant = useCallback(() => {
-    const next = createDemoGrant();
+    const next = createDefaultGrant();
     setGrant(next);
     setTrustTimeline(initialTimeline(next));
+    setEvidencePackets([]);
   }, []);
+
+  const updateGrant = useCallback((next: AgentGrant) => {
+    setGrant(next);
+    appendTimeline({
+      id: `evt_policy_${Date.now().toString(36)}`,
+      at: new Date().toISOString(),
+      actor: next.userName,
+      action: 'GRANT_UPDATED',
+      target: next.agentName,
+      decision: 'INFO',
+      detail: 'Sandbox policy updated',
+      evidenceId: `local:${Date.now().toString(36)}`,
+    });
+  }, [appendTimeline]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -562,7 +689,7 @@ const App: React.FC = () => {
               <span className={`vf-brand-name ${isSeniorMode ? 'text-xl' : ''}`}>
                 {t.appName}<span className="text-crypto-accent">{t.appNameHighlight}</span>
               </span>
-              <span className="vf-brand-subtitle">Trust gateway for people + agents</span>
+              <span className="vf-brand-subtitle">{landing.headerSubtitle}</span>
             </span>
           </a>
           <nav className="vf-product-nav" aria-label="Product">
@@ -629,15 +756,17 @@ const App: React.FC = () => {
           language={language}
           grant={grant}
           timeline={trustTimeline}
+          evidencePackets={evidencePackets}
           onBack={() => setView('SANDBOX')}
           onRevoke={revokeGrant}
           onResetGrant={resetGrant}
+          onUpdateGrant={updateGrant}
         />
       ) : view === 'INCIDENT' ? (
         <CredentialIncidentResponse language={language} onBack={() => setView('SANDBOX')} />
       ) : (
       <main className="vf-container vf-main">
-        {!analysis && loadingState === 'IDLE' && (
+        {!analysis && loadingState === 'IDLE' && (<>
           <section className="vf-hero">
             <div className="vf-hero-copy">
               <span className="vf-eyebrow">{landing.eyebrow}</span>
@@ -667,7 +796,7 @@ const App: React.FC = () => {
 
             <div className="vf-sandbox-stack">
               <div className="vf-inspection-tray" aria-hidden="true">
-                <span>INPUT</span><i /><span>ISOLATE</span><i /><span>DECIDE</span>
+                <span>{landing.tray[0]}</span><i /><span>{landing.tray[1]}</span><i /><span>{landing.tray[2]}</span>
               </div>
               <SearchInput
                 key={searchInputKey}
@@ -682,6 +811,7 @@ const App: React.FC = () => {
                   grant={grant}
                   onOpenControl={() => setView('CONTROL')}
                   onTimelineEvent={appendTimeline}
+                  onEvidencePacket={appendEvidencePacket}
                 />
               )}
             </div>
@@ -698,7 +828,43 @@ const App: React.FC = () => {
               </div>
             )}
           </section>
-        )}
+          {!isSeniorMode && (
+            <section className="vf-product-logic" aria-labelledby="vf-product-logic-title">
+              <header className="vf-product-logic-head">
+                <div><span className="vf-eyebrow">{landing.logicEyebrow}</span><h2 id="vf-product-logic-title">{landing.logicTitle}</h2></div>
+                <p>{landing.logicBody}</p>
+              </header>
+
+              <div className="vf-trust-lane" aria-label="Agent request verification flow">
+                <div className="vf-trust-node"><Bot size={19} /><span><small>01 · REQUEST</small>AI AGENT</span></div>
+                <ArrowRight className="vf-trust-arrow" size={17} />
+                <div className="vf-trust-node is-gate"><ShieldCheck size={19} /><span><small>02 · POLICY GATE</small>VERIFYFIRST</span><div><b>ALLOW</b><b>CONFIRM</b><b>DENY</b></div></div>
+                <ArrowRight className="vf-trust-arrow" size={17} />
+                <div className="vf-trust-node"><Wrench size={19} /><span><small>03 · EXECUTION</small>TOOL / API</span></div>
+              </div>
+
+              <div className="vf-market-grid">
+                <div className="vf-ledger-column">
+                  <span className="vf-agent-kicker">{landing.audienceLabel}</span>
+                  {landing.audiences.map((item, index) => {
+                    const Icon = [Factory, Building2, Landmark][index];
+                    return <article key={item.title}><Icon size={17} /><div><strong>{item.title}</strong><p>{item.description}</p></div></article>;
+                  })}
+                </div>
+                <div className="vf-ledger-column is-problem">
+                  <span className="vf-agent-kicker">{landing.painLabel}</span>
+                  {landing.pains.map((item, index) => <article key={item.title}><b>0{index + 1}</b><div><strong>{item.title}</strong><p>{item.description}</p></div></article>)}
+                </div>
+              </div>
+
+              <div className="vf-x402-band">
+                <span className="vf-x402-icon"><CircleDollarSign size={21} /></span>
+                <div><span className="vf-agent-kicker">PAYMENT EVIDENCE</span><h3>{landing.x402Title}</h3><p>{landing.x402Body}</p></div>
+                <div className="vf-x402-tags">{landing.x402Tags.map(tag => <span key={tag}>{tag}</span>)}</div>
+              </div>
+            </section>
+          )}
+        </>)}
 
         {/* Loading State — 3-step progress indicator */}
         {(loadingState === 'SEARCHING' || loadingState === 'ANALYZING') && (() => {
