@@ -2705,6 +2705,14 @@ textarea:focus-visible {
   grid-template-columns: minmax(0, .72fr) minmax(560px, 1.28fr);
 }
 
+/* The consumer intro includes the large-type callout and shares its grid with
+   the full-width help rail. Keeping this column sticky makes the callout cover
+   that rail while scrolling, so the whole intro should move with the page. */
+.vf-consumer-hero > .vf-hero-copy {
+  position: static;
+  top: auto;
+}
+
 .vf-consumer-stack {
   gap: 12px;
 }
