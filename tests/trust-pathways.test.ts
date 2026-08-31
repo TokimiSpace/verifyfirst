@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import vm from 'node:vm';
 
 const page = fs.readFileSync(path.resolve('public/trust-pathways/index.html'), 'utf8');
 const verifierDockerfile = fs.readFileSync(path.resolve('services/vlei-verifier/Dockerfile.vercel'), 'utf8');
@@ -27,7 +29,7 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('4 撤銷拒絕');
     expect(page).toContain('grid-template-columns:repeat(8,1fr)');
     expect(page).toContain("at:10,chapter:'02 · GLEIF vLEI VERIFIER'");
-    expect(page).toContain("at:46,chapter:'05 · PAYMENT RISK'");
+    expect(page).toContain("at:46,chapter:'05 · PAYMENT RISK + IFF'");
     expect(page).toContain("at:83,chapter:'08 · FAIL CLOSED'");
     expect(page).toContain('tool_execution=false');
     expect(page).toContain("$('#pauseJudge').onclick");
@@ -81,6 +83,49 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('BACKEND_TIMEOUT');
   });
 
+  it('separates the replayable training trust domain from production', () => {
+    expect(page).toContain('Training Sandbox · 可重播');
+    expect(page).toContain('Production Verifier · GLEIF Root');
+    expect(page).toContain('TRAINING ONLY');
+    expect(page).toContain('Production 模式不會以 Training 根金鑰產生 VALID');
+    expect(page).toContain("selectVerifierMode('training')");
+    expect(page).toContain("verifierMode=mode==='production'?'production':'training'");
+  });
+
+  it('cryptographically verifies valid, tampered, and revoked training fixtures', () => {
+    const match = page.match(/const TRAINING_FIXTURE=(\{[\s\S]*?\n    \});/);
+    expect(match).not.toBeNull();
+    const fixture = vm.runInNewContext(`(${match![1]})`);
+    const canonicalize = (value: unknown): string => {
+      if (value === null || typeof value !== 'object') return JSON.stringify(value);
+      if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`;
+      const record = value as Record<string, unknown>;
+      return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${canonicalize(record[key])}`).join(',')}}`;
+    };
+    const publicKey = crypto.createPublicKey({
+      key: Buffer.from(fixture.publicKeySpki, 'base64url'),
+      format: 'der',
+      type: 'spki',
+    });
+    const verify = (value: unknown, signature: string) => crypto.verify(
+      null,
+      Buffer.from(canonicalize(value)),
+      publicKey,
+      Buffer.from(signature, 'base64url'),
+    );
+    const fingerprint = `sha256-${crypto.createHash('sha256').update(Buffer.from(fixture.publicKeySpki, 'base64url')).digest('base64url')}`;
+    const tampered = { ...fixture.payload, role: 'Treasury Admin · TAMPERED' };
+
+    expect(fingerprint).toBe(fixture.rootFingerprint);
+    expect(verify(fixture.payload, fixture.credentialSignature)).toBe(true);
+    expect(verify(tampered, fixture.credentialSignature)).toBe(false);
+    expect(verify(fixture.issuedEvent, fixture.issuedSignature)).toBe(true);
+    expect(verify(fixture.revokedEvent, fixture.revokedSignature)).toBe(true);
+    expect(page).toContain("policy='DENY_CREDENTIAL_REVOKED'");
+    expect(page).toContain("policy='ALLOW_TRAINING_ONLY'");
+    expect(page).toContain("policy='DENY_SIGNATURE_INVALID'");
+  });
+
   it('pins and hardens the deployable GLEIF verifier container', () => {
     expect(verifierDockerfile).toContain('5850051b52dce24ed59eae486af76e7c73f6012c');
     expect(verifierDockerfile).toContain('ENTRYPOINT ["/keripy/venv/bin/verifier"');
@@ -115,6 +160,20 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('function updateRubric(scene)');
   });
 
+  it('switches the score map with pain points 04, 05, and 06 outside the guided tour', () => {
+    expect(page).toContain('const scenarioRubrics={');
+    expect(page).toContain("government:{chapter:'PAIN POINT 04 · 政府服務'");
+    expect(page).toContain("migrant:{chapter:'PAIN POINT 05 · 移工數位信任'");
+    expect(page).toContain("rba:{chapter:'PAIN POINT 06 · RBA 供應鏈'");
+    expect(page).toContain('主辦方需求對照');
+    expect(page).toContain('CONDITIONAL READY · REQUIRE_HUMAN_CONFIRMATION');
+    expect(page).toContain('CREDENTIAL READY · ALLOW_CREDENTIAL_ISSUANCE');
+    expect(page).toContain('PARTIAL PASS · REQUIRE_EXCEPTION_REVIEW');
+    expect(page).toContain('function syncScenarioRubric()');
+    expect(page).toContain("if($('#judgeConsole').classList.contains('active'))return");
+    expect(page).toContain('syncScenarioRubric()');
+  });
+
   it('adds a pre-execution payment fraud checkpoint with user-controlled hold', () => {
     expect(page).toContain('PRE-EXECUTION CHECKPOINT');
     expect(page).toContain('HOLD_HIGH_RISK_TRANSFER');
@@ -133,8 +192,31 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('FIXTURE FALLBACK');
   });
 
+  it('embeds the pinned IFF SDK as a pre-payment evidence input', () => {
+    expect(page).toContain('IFF SDK PREFLIGHT · x402 v2');
+    expect(page).toContain('https://ifandonlyif.io/sdk');
+    expect(page).toContain('@ifandonlyif/x402-preflight@0.1.0/dist/index.js');
+    expect(page).toContain('const result=await sdk.verify(endpoint.toString(),requirement)');
+    expect(page).toContain("consistent:{verdict:'consistent',policy:'CONTINUE_OTHER_CHECKS'");
+    expect(page).toContain("diverged:{verdict:'diverged',policy:'HOLD_REQUIREMENT_DIVERGED'");
+    expect(page).toContain("stale:{verdict:'stale',policy:'REVIEW_STALE_EVIDENCE'");
+    expect(page).toContain("unobserved:{verdict:'unobserved',policy:'REVIEW_UNOBSERVED_ENDPOINT'");
+    expect(page).toContain("return'HOLD_IFF_UNAVAILABLE'");
+    expect(page).toContain('不能證明秘密從未外洩');
+  });
+
+  it('keeps the judge journey on two VerifyFirst URLs and embeds IFF in the main demo', () => {
+    expect(page).toContain('URL 01 · JUDGE DEMO');
+    expect(page).toContain('https://verify1st.tw/trust-pathways/');
+    expect(page).toContain('URL 02 · TECHNICAL PROOF');
+    expect(page).toContain('https://verify1st.tw/update-trust');
+    expect(page).toContain('鏈上＋IFF 查驗');
+  });
+
   it('exports a signed and locally verifiable minimal-disclosure evidence packet', () => {
-    expect(page).toContain('verifyfirst.payment-risk-evidence.v2');
+    expect(page).toContain('verifyfirst.payment-risk-evidence.v3');
+    expect(page).toContain('external_evidence:{iff_x402_preflight:');
+    expect(page).toContain("event:'IFF_X402_PREFLIGHT'");
     expect(page).toContain("algorithm:'ECDSA_P256_SHA256'");
     expect(page).toContain("crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'}");
     expect(page).toContain("crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'}");
