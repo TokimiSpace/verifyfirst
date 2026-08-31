@@ -24,7 +24,9 @@ const sha256 = async (value: string): Promise<string> => {
 };
 
 /**
- * Creates a portable, tamper-evident record of a sandbox policy decision.
+ * Creates a portable, unsigned SHA-256 self-check for a sandbox policy decision.
+ * This detects a changed body only when the expected digest is trusted separately;
+ * it does not prove issuer authenticity.
  * The packet deliberately contains field names only; callers must never place
  * passwords, tokens, OTPs, or personal-data values in AgentActionRequest.
  */

@@ -239,18 +239,30 @@
       DENY_UPSTREAM_QVI_REVOKED: ['QVI 憑證撤銷，整條鏈失效', 'GLEIF 撤銷 QVI 資格後，該 QVI 簽發的一切都不再可信。'],
       DENY_MANDATE_EXPIRED: ['委任逾期，需重新簽發', '短效委任到期即失效；不存在「一次驗證、永久授權」。'],
       DENY_SAID_MISMATCH: ['內容遭竄改，SAID 不符', '任何欄位改動都會讓重算的 Blake3 SAID 與宣稱值不同；驗證方不需要信任任何人就能發現。'],
+      DENY_DUPLICATE_EVENT_CONFLICT: ['同一事件識別出現衝突內容', '完全相同的重播訊息可去重；相同 type 與 SAID 若帶不同內容則整串拒絕。'],
+      DENY_UNSUPPORTED_EVENT_TYPE: ['事件型別尚未完整支援', '瀏覽器不會忽略未知 KERI／TEL 事件；未實作完整狀態機就直接拒絕並交給後端 verifier。'],
+      DENY_CREDENTIAL_GRAPH_INVALID: ['憑證集合不是唯一完整鏈', '串流含有多個終端、斷開或未被使用的憑證；任何額外憑證都不能被靜默忽略。'],
+      DENY_CREDENTIAL_SET_INVALID: ['憑證集合含有無效項目', '即使選定的終端鏈看似有效，只要輸入內仍有未通過的憑證就拒絕。'],
+      DENY_REGISTRY_COVERAGE_INVALID: ['TEL registry 未被完整驗證', '每個輸入的 vcp registry 都必須被憑證鏈使用並精確錨定；多餘或未錨定 registry 一律拒絕。'],
+      DENY_UNCONSUMED_AID: ['輸入含未被憑證鏈使用的 AID', '每一條 KEL 都必須對應憑證鏈中的 issuer 或 issuee；看似有效但無關的 KEL 也不能被忽略。'],
+      DENY_KEL_INVALID: ['KEL 事件鏈不連續', 'inception、序號、前一事件、簽章門檻或完整輪替承諾至少一項不成立。'],
       DENY_ROOT_MISMATCH: ['信任根不符：測試 root ≠ GLEIF production', '這份 fixture 的 QVI 憑證由測試 AID 簽發；以 production root 政策驗證時必須拒絕——與 live keripy verifier 的判定一致。'],
       DENY_CHAIN_BROKEN: ['邊鏈斷裂', 'ACDC 邊指向的憑證不存在、schema 不符或違反 I2I 規則。'],
+      DENY_SCHEMA_CONFORMANCE: ['釘選 schema 關鍵條件不符', '必要欄位、允許欄位、edge 形狀、schema SAID 或 operator 不符合這個憑證類型。'],
+      DENY_REGISTRY_ISSUER_MISMATCH: ['憑證簽發者與 TEL registry 控制者不一致', '憑證宣稱的 issuer 必須就是建立並控制其狀態 registry 的 AID。'],
       DENY_SIGNATURE_INVALID: ['KEL 簽章無效', '控制者簽章與 icp 公鑰不符。'],
       DENY_NO_CREDENTIAL: ['沒有可驗證的憑證', '串流中沒有任何 ACDC。'],
       DENY_NO_DELEGATION: ['沒有有效的 Agent 委任', '請求方不是任何委任憑證的 issuee；人的 ECR 憑證不等於 Agent 的授權。'],
       DENY_SIGNATURE_UNVERIFIABLE: ['此瀏覽器無法驗證 Ed25519 簽章', '不是簽章錯誤，而是 WebCrypto 不支援 Ed25519（需 Chrome 137+／Safari 17+／Firefox 130+）；未驗證即拒絕，交由後端。'],
       DENY_TEL_NOT_ANCHORED: ['TEL 事件未錨定於簽發者 KEL', 'iss／vcp 沒有出現在簽發者的 interaction event seal 中，不能當作簽發證明。'],
+      DENY_TEL_EVENT_UNANCHORED: ['撤銷事件沒有可信錨定', '輸入雖含 rev，但找不到完全相符的 issuer KEL seal；不宣稱已撤銷，狀態視為未知並 fail closed。'],
+      DENY_TEL_STATE_INVALID: ['TEL 狀態鏈不連續', 'iss／rev 的序號、前一事件或 registry 對應不成立。'],
+      DENY_UNCONSUMED_TEL_EVENT: ['串流含未被驗證的 TEL 事件', '每個 iss／rev 都必須對應同一串流中的憑證，否則整串拒絕。'],
       DENY_STREAM_CORRUPT: ['CESR 串流有訊息無法解析', '任何一則損毀的 KEL／TEL／ACDC 訊息都會使整條鏈不可信。'],
       DENY_VERIFICATION_FAILED: ['驗證未通過', '至少一項檢查失敗；預設拒絕。'],
     };
     const TAMPER_SCOPE = ['submit:declaration', 'read:process-recipe'];
-    const state = { messages: [], report: null, agent: null, delegation: null, tamperedDelegation: null, carbon: null, carbonTampered: false, registry: null, iss: null, sims: [], tampered: false, clockOffsetMs: 0, root: 'fixture', audit: [], sha: { local: null, remote: null }, lastDecision: null, packet: null, rotations: 0 };
+    const state = { messages: [], report: null, agent: null, delegation: null, tamperedDelegation: null, carbon: null, carbonTampered: false, registry: null, iss: null, sims: [], revoked: new Set(), tampered: false, clockOffsetMs: 0, root: 'fixture', audit: [], sha: { local: null, remote: null }, lastDecision: null, packet: null, rotations: 0 };
     let clockSeconds = 0;
     const toast = m => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1800); };
     const short = s => typeof s === 'string' && s.length > 20 ? `${s.slice(0, 10)}…${s.slice(-6)}` : (s ?? '–');
@@ -265,7 +277,7 @@
     }
     const allMessages = () => [...state.messages, ...state.sims];
     const rootAid = () => K.ROOT_OF_TRUST[state.root].aid;
-    const verifyOptions = () => ({ rootAid: rootAid(), now: simulatedNow(), leafSaid: state.delegation?.d || null, unanchoredOk: new Set(state.delegation ? [state.delegation.d] : []) });
+    const verifyOptions = () => ({ rootAid: rootAid(), now: simulatedNow(), leafSaid: state.delegation?.d || null, unanchoredOk: new Set(state.delegation ? [state.delegation.d] : []), revoked: new Set(state.revoked) });
     const activeMessages = () => allMessages().map(m => (state.tampered && state.tamperedDelegation && m.ked?.d === state.delegation?.d) ? { ...m, ked: state.tamperedDelegation } : m);
 
     /* ---------------------------------------------------------------- 01 fixture */
@@ -450,11 +462,9 @@
     function revokeCredential(said, label, by) {
       const keds = allMessages().map(m => m.ked), cred = keds.find(k => k.d === said);
       if (!cred) return;
-      if (keds.some(k => k.t === 'rev' && k.i === said)) { toast(`${label} 已是 REVOKED`); return; }
-      const iss = keds.find(k => k.t === 'iss' && k.i === said);
-      const rev = K.buildRevocation(said, cred.ri, iss?.d || 'EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', simulatedNow().toISOString());
-      state.sims.push(K.asMessage(rev));
-      audit(`${label} revoked (simulated TEL)`, 'TEL_REV_EVENT', `rev ${rev.d} · credential ${short(said)} · registry ${short(cred.ri)} · by ${by} · 未寫入真實 TEL`, 'sim');
+      if (state.revoked.has(said)) { toast(`${label} 已是 REVOKED`); return; }
+      state.revoked.add(said);
+      audit(`${label} revoked (demo policy simulation)`, 'REVOCATION_SIMULATED', `credential ${short(said)} · registry ${short(cred.ri)} · by ${by} · 未產生或宣稱真實 TEL rev／KEL seal`, 'sim');
       toast(`${label} 已撤銷（模擬）`); requestTool();
     }
     const findCred = key => state.report?.credentials.find(c => c.schemaKey === key)?.said || state.messages.map(m => m.ked).find(k => K.schemaBySaid(k.s)?.key === key)?.d;
@@ -483,14 +493,14 @@
     $('#tamperScope').onclick = () => { if (!state.delegation) return; state.tampered = true; audit('Delegation scope tampered in transit', 'TAMPER_SIMULATED', `scope.allow 追加 ${TAMPER_SCOPE.join('、')}，但未重算 a.d／d`, 'sim'); requestTool(); };
     $('#rotateAgent').onclick = rotateAgent;
     $('#reissue').onclick = () => { state.tampered = false; issueDelegation(); requestTool(); };
-    function clearDelegation(reason) { state.sims = state.sims.filter(m => m.ked.t === 'icp' || m.ked.t === 'rot'); state.delegation = null; state.tamperedDelegation = null; state.iss = null; state.tampered = false; state.clockOffsetMs = 0; $('#delegationPayload').textContent = '等待簽發…'; ['#requestTool', '#revokeDelegation', '#revokeEcr', '#revokeLe', '#expireMandate', '#tamperScope', '#reissue', '#undoSim'].forEach(sel => $(sel).disabled = true); renderDecision(null); if (state.report) runVerification(true); audit('Simulated TEL events cleared', 'SIM_RESET', reason); }
+    function clearDelegation(reason) { state.sims = state.sims.filter(m => m.ked.t === 'icp' || m.ked.t === 'rot'); state.revoked.clear(); state.delegation = null; state.tamperedDelegation = null; state.iss = null; state.tampered = false; state.clockOffsetMs = 0; $('#delegationPayload').textContent = '等待簽發…'; ['#requestTool', '#revokeDelegation', '#revokeEcr', '#revokeLe', '#expireMandate', '#tamperScope', '#reissue', '#undoSim'].forEach(sel => $(sel).disabled = true); renderDecision(null); if (state.report) runVerification(true); audit('Simulated revocation state cleared', 'SIM_RESET', reason); }
     $('#undoSim').onclick = () => clearDelegation('fixture 回到原始訊息（保留 Agent AID）；沒有委任就不能請求工具');
     document.querySelectorAll('.root-switch button').forEach(b => b.onclick = () => { state.root = b.dataset.root; document.querySelectorAll('.root-switch button').forEach(x => x.classList.toggle('active', x === b)); audit('Root of trust policy switched', `ROOT_${state.root.toUpperCase()}`, K.ROOT_OF_TRUST[state.root].aid, state.root === 'production' ? 'sim' : ''); if (state.report) (state.delegation ? requestTool() : runVerification(true)); });
     $('#resetAll').onclick = () => location.reload();
 
     /* -------------------------------------------------------------- 05 evidence */
     async function buildPacket() {
-      const packet = { schema: 'verifyfirst.update-trust-evidence.v1', generated_at: new Date().toISOString(), demo_mode: true, fixture: { source: FIXTURE.remote, pinned_commit: FIXTURE.commit, sha256_local: state.sha.local, sha256_remote: state.sha.remote, messages: state.messages.length }, root_of_trust: { policy: state.root, aid: rootAid() }, agent: state.agent ? { aid: state.agent.aid, inception: state.agent.icp, rotations: state.rotations } : null, carbon_credential: state.carbon, delegation: state.delegation, delegation_as_presented: state.tampered ? state.tamperedDelegation : state.delegation, tampered_in_transit: state.tampered, simulated_events: state.sims.map(m => m.ked).filter(k => !k.v?.startsWith('ACDC')), verification: state.report ? { checks: state.report.checks, credentials: state.report.credentials, decision: state.report.decision } : null, audit: state.audit, verifier: { module: 'update-trust/said.js', browser_layers: ['BLAKE3_SAID', 'ED25519_KEL_SIGNATURES', 'ACDC_EDGES_I2I', 'SCHEMA_SAID_PIN', 'TEL_STATUS', 'KEL_ANCHORING', 'EXPIRY'], not_verified_in_browser: ['witness receipts', 'live key state via OOBI', 'duplicity / watchers', 'production root policy beyond AID comparison'] } };
+      const packet = { schema: 'verifyfirst.update-trust-evidence.v1', generated_at: new Date().toISOString(), demo_mode: true, fixture: { source: FIXTURE.remote, pinned_commit: FIXTURE.commit, sha256_local: state.sha.local, sha256_remote: state.sha.remote, messages: state.messages.length }, root_of_trust: { policy: state.root, aid: rootAid() }, agent: state.agent ? { aid: state.agent.aid, inception: state.agent.icp, rotations: state.rotations } : null, carbon_credential: state.carbon, delegation: state.delegation, delegation_as_presented: state.tampered ? state.tamperedDelegation : state.delegation, tampered_in_transit: state.tampered, simulated_events: state.sims.map(m => m.ked).filter(k => !k.v?.startsWith('ACDC')), simulated_revoked_credentials: [...state.revoked], verification: state.report ? { checks: state.report.checks, credentials: state.report.credentials, decision: state.report.decision } : null, audit: state.audit, verifier: { module: 'update-trust/said.js', browser_layers: ['BLAKE3_SAID', 'ED25519_KEL_SIGNATURES', 'ACDC_EDGES_I2I', 'SCHEMA_SAID_PIN', 'TEL_STATUS', 'KEL_ANCHORING', 'EXPIRY'], tel_scope: 'SUPPLIED_STREAM_SNAPSHOT_ONLY', not_verified_in_browser: ['live TEL status', 'witness receipts', 'live key state via OOBI', 'duplicity / watchers', 'production root policy beyond AID comparison'] } };
       const bytes = new TextEncoder().encode(JSON.stringify(packet)); packet.packet_sha256 = await sha256Hex(bytes);
       state.packet = packet; $('#packetBadge').textContent = 'PACKET · READY'; $('#packetDigest').textContent = `SHA-256 ${packet.packet_sha256} · ${Math.round(bytes.length / 1024)} KB · ${state.audit.length} audit events`;
       return packet;

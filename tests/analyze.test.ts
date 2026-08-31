@@ -68,22 +68,10 @@ describe('computeDegradation', () => {
     expect(d.score).toBe(1);
   });
 
-  it('L1 when Blob failed alone (weight=2)', () => {
-    const d = computeDegradation(['Vercel Blob']);
-    expect(d.level).toBe('L1');
-    expect(d.score).toBe(2);
-  });
-
   it('L2 when three side services failed (score=3)', () => {
     const d = computeDegradation(['VirusTotal', 'RDAP', 'DNS']);
     expect(d.level).toBe('L2');
     expect(d.score).toBe(3);
-  });
-
-  it('L2 when Blob + two side services failed (score=4)', () => {
-    const d = computeDegradation(['Vercel Blob', 'VirusTotal', 'RDAP']);
-    expect(d.level).toBe('L2');
-    expect(d.score).toBe(4);
   });
 
   it('L3 when five side services failed (score=5)', () => {

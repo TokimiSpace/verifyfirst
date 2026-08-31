@@ -46,6 +46,12 @@ deploying either surface.
   action boundaries, SHA-256 evidence, and a local Trust Timeline
 - **Credential incident response** — compares environment-variable names
   locally, never secret values, and builds accountable remediation tasks
+- **Live legal-entity lookup** — queries the official GLEIF Golden Copy by LEI,
+  with bounded responses and no synthetic fallback
+- **Local vLEI / CESR verification** — accepts pasted or local CESR up to 128
+  KiB and verifies SAIDs, KEL signatures, official ACDC schemas, TEL anchoring,
+  registry-controller ownership, expiry, and an explicitly selected production
+  or fixture trust root
 - **Trust Pathways** — cross-organization scenarios at `/trust-pathways/`
 - **Update Trust** — vLEI / KERI / ACDC / TEL lifecycle verification at
   `/update-trust/`
@@ -56,7 +62,7 @@ deploying either surface.
 - **Frontend**: React 19, TypeScript, Tailwind CSS, Vite
 - **AI**: Google Gemini 2.5 Flash with Google Search grounding
 - **Backend**: Vercel Serverless Functions
-- **Caching**: bounded in-memory L1 + hot-entry Vercel Blob L2 (72h)
+- **Caching**: bounded 72-hour warm-instance memory cache; no metered storage operations
 - **OCR**: tesseract.js (lazy-loaded, in-browser)
 
 ## How an Analysis Works
@@ -70,9 +76,9 @@ deploying either surface.
 4. Gemini analyzes with search grounding, receiving the facts as ground truth
 5. Code-level post-processing: blocklist verdict floors, low-evidence
    normalization, and PII masking
-6. The result enters a bounded memory cache immediately; only entries requested
-   twice are promoted to the shared 72-hour Blob cache, avoiding writes for
-   one-off messages
+6. The result enters a bounded 72-hour warm-instance memory cache. Cold starts
+   begin empty, intentionally trading shared persistence for zero metered
+   storage operations
 
 ## How the Experimental Agent Filter Works
 
@@ -137,11 +143,42 @@ guarantee that payment is safe or that the endpoint will deliver afterward.
 The integration never holds a wallet key or executes a payment. Public checks
 need no API key; `IFF_BASE_URL` exists only for staging or local IFF instances.
 
-## Enterprise Lab Modules
+## Enterprise Verification Workspace
 
-The enterprise lab links two standalone static modules under `public/`. Their
-URLs remain stable for existing demos, but both are explicitly experimental and
-must not be treated as production identity or compliance decisions:
+`/business/?module=verify` is the canonical product-facing workflow. It brings
+the strongest reusable parts of both demo pages into one interface:
+
+1. Enter an LEI to query the official GLEIF record.
+2. Paste or choose a CESR file; raw input remains in browser memory.
+3. Select the production GLEIF root or the clearly labeled regression-fixture
+   root.
+4. Run the canonical verifier from `public/update-trust/said.js` locally.
+5. Review the machine-readable `ALLOW_*` / `DENY_*` result, credential chain,
+   failed checks, and mandatory terminal-credential LEI cross-check. Upstream
+   issuer LEIs never satisfy this comparison.
+6. Export an unsigned local Evidence Packet with a deterministic SHA-256
+   self-check over the full decision, root, checks, credential summaries, LEI
+   provenance, freshness result, and source digest. This checksum detects a
+   changed body only when the expected checksum is obtained separately; it is
+   not a signature, timestamp, issuer-authenticity proof, or append-only log.
+   Only the bounded result summary and checksum enter the browser-local Trust
+   Timeline.
+
+The browser verifier does not fetch live OOBI key state, verify witness
+receipts, or run watcher-based duplicity detection. Its output is evidence for
+review; production-root checks remain blocked from tool execution until a
+backend verifier repeats those live checks. The strict enterprise wrapper also
+rejects trailing/unconsumed CESR bytes, unsupported framing, issuer-to-registry
+mismatches, and violations of pinned schema SAIDs plus selected fail-closed
+field, edge, operator, AID, and LEI invariants. It does not claim to be a full
+Draft-07 JSON Schema engine.
+
+## Enterprise Lab Deep Dives
+
+Two standalone static modules under `public/` remain stable for training,
+technical diagnostics, and existing demo links. Both are explicitly
+experimental and must not be treated as production identity or compliance
+decisions:
 
 - **Demo video production kit** — the
   [Track 05–06 ComfyUI + MiniMax plan](docs/demo-video/track-05-06-comfyui-minimax-production-plan.md)
@@ -165,8 +202,11 @@ must not be treated as production identity or compliance decisions:
   each flip the decision to a machine-readable `DENY_*`.
   All verifier logic lives in `public/update-trust/said.js` and is unit-tested
   against the official BLAKE3 vectors and the fixture (`tests/update-trust.test.ts`).
-  Witness receipts, live key state and duplicity detection are explicitly left
-  to the backend verifier.
+  TEL status is only the point-in-time state established by events and exact
+  KEL seals supplied in that CESR stream; it is not a live revocation query.
+  Witness receipts, live key state, live TEL retrieval, and duplicity detection
+  are explicitly left to the backend verifier. Unsupported event families fail
+  closed instead of being ignored.
 
 ## Getting Started
 
@@ -210,14 +250,8 @@ npm test
 | `GEMINI_API_KEY` | Yes | Your Google Gemini API key |
 | `GEMINI_MODEL` | No | Analysis model override (default `gemini-2.5-flash`) |
 | `GEMINI_THINKING_BUDGET` | No | Unset = model default; `0` disables thinking (cheaper/faster) |
-| `BLOB_READ_WRITE_TOKEN` | For production | Vercel Blob storage token (auto-configured on Vercel) |
-| `BLOB_CACHE_ENABLED` | No | `true` by default; set `false` to disable Blob persistence (bounded memory cache remains active) |
-| `BLOB_CACHE_MIN_HITS` | No | Blob admission threshold (default `2`); `1` restores write-on-first-miss, `0` disables Blob cache writes |
 | `MEMORY_CACHE_MAX_ENTRIES` | No | Maximum warm-instance analysis entries (default `200`, capped at `2000`) |
-| `RATE_LIMIT_BACKEND` | No | `memory` (default) or `blob` for shared limits; `blob` consumes `list`/`put` advanced operations |
-| `ML_DATA_BLOB_ENABLED` | No | `false` by default; `true` writes full ML records to Blob |
-| `ML_DATA_SAMPLE_RATE` | No | `0`–`1` sampling rate for ML Blob records when enabled (default `0.1`) |
-| `BLOB_PUBLIC_BASE_URL` | No | Optional public Blob base URL override for cache reads |
+| `MEMORY_RATE_LIMIT_MAX_ENTRIES` | No | Maximum warm-instance hashed IP counters (default `5000`, capped at `20000`) |
 | `GOOGLE_SAFE_BROWSING_KEY` | No | Enables Google Safe Browsing pre-check |
 | `VIRUSTOTAL_API_KEY` | No | Enables VirusTotal pre-check |
 | `GOOGLE_SHEETS_WEBHOOK_URL` | No | Logs flat analysis summaries for human labeling |
@@ -257,13 +291,17 @@ cryptotruth/
 │   ├── example-responses.ts  # Canned responses for demo chips (zero quota)
 │   └── safe-domains.ts       # Self/known-safe allowlist short-circuit
 ├── components/
+│   ├── business/             # Integrated LEI + vLEI/CESR verification workspace
 │   ├── consumer/             # To C guided intake + safety conversation
 │   └── *.tsx                 # Shared and legacy feature components
 ├── services/
 │   ├── agentPolicy.ts        # Deterministic Agent authorization gate
-│   ├── agentEvidence.ts      # Canonical Evidence Packet hashing
+│   ├── agentEvidence.ts      # Agent policy Evidence Packet hashing
+│   ├── evidenceIntegrity.ts  # Unsigned enterprise Evidence Packet self-check
 │   ├── agentGateway.ts       # Server gate client with local static-host fallback
 │   ├── credentialIncident.ts # Local-only secret-name matching + response plan
+│   ├── gleif.ts              # Bounded, fail-closed official LEI lookup
+│   ├── vleiClient.ts         # Production-safe wrapper around the canonical verifier
 │   └── geminiService.ts      # Frontend client for /api/analyze
 ├── tests/                    # Vitest unit + handler integration tests
 ├── public/
@@ -277,9 +315,15 @@ cryptotruth/
 
 ## API Rate Limits
 
-- **10 requests per hour** per IP address (cache hits don't count)
-- Results enter a warm-instance cache immediately; repeated entries are promoted
-  to the shared Blob cache for **72 hours**
+- Best-effort **10 requests per hour per hashed IP, per warm serverless
+  instance** (cache hits do not count). Cold starts and parallel instances have
+  independent counters, so this is not a global Gemini quota boundary.
+- Results remain in a bounded warm-instance cache for up to **72 hours**
+- Rate-limit counters are also warm-instance only; no request reads or writes
+  metered storage
+- Retiring an older Blob deployment requires the one-time
+  [Vercel Blob cleanup checklist](docs/VERCEL_BLOB_RETIREMENT.md); a code deploy
+  cannot delete historical public objects or revoke the old token.
 
 ## Disclaimer
 

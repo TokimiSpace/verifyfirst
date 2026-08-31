@@ -1,16 +1,13 @@
 import { createHash } from "node:crypto";
 import { GoogleGenAI } from "@google/genai";
-import { BlobNotFoundError, head, list, put } from "@vercel/blob";
 import { preflightX402Response } from "../services/iffX402.js";
 import { isExampleInput, getExampleResponse } from "./example-responses.js";
 import { isKnownSafeUrl, getSafeResponse } from "./safe-domains.js";
 
 // =============================================================================
-// SAFE BLOB WRAPPERS — never throw; fall back to in-memory state on failure
+// BOUNDED WARM-INSTANCE STATE — no external storage operations
 // =============================================================================
 
-interface SafeBlob { url: string; uploadedAt: string | Date }
-const inMemoryBlobs = new Map<string, { data: string; uploadedAt: Date; url: string }>();
 const inMemoryRateLimits = new Map<string, { windowStart: number; count: number }>();
 
 interface MemoryAnalysisEntry {
@@ -18,23 +15,12 @@ interface MemoryAnalysisEntry {
   cachedAt: number;
   expiresAt: number;
   hits: number;
-  persisted: boolean;
-  nextPromotionAt: number;
 }
 
-// L1 cache + frequency-gated admission. One-off lookups stay in the warm
-// function instance; only content requested at least N times is promoted to
-// Blob. This is important for scam analysis, where most pasted messages are
-// unique and writing every miss wastes Hobby Advanced Operations.
+// Analysis results and rate-limit counters intentionally stay inside the warm
+// function instance. This keeps the service independent from metered storage;
+// a cold start may lose cache state, but every request performs zero Blob ops.
 const memoryAnalysisCache = new Map<string, MemoryAnalysisEntry>();
-let blobDegraded = false;
-
-// An empty-string env var (set but blank) means "unset" — without the trim
-// check, `BLOB_CACHE_ENABLED=` would read as false and `Number('')` as 0.
-const boolFromEnv = (value: string | undefined, defaultValue: boolean): boolean => {
-  if (value == null || value.trim() === '') return defaultValue;
-  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
-};
 
 const numberFromEnv = (value: string | undefined, defaultValue: number): number => {
   if (value == null || value.trim() === '') return defaultValue;
@@ -42,100 +28,8 @@ const numberFromEnv = (value: string | undefined, defaultValue: number): number 
   return Number.isFinite(parsed) ? parsed : defaultValue;
 };
 
-const getRateLimitBackend = () => (process.env.RATE_LIMIT_BACKEND || 'memory').toLowerCase();
-const isMLBlobCollectionEnabled = () => boolFromEnv(process.env.ML_DATA_BLOB_ENABLED, false);
-const getMLBlobSampleRate = () => Math.min(1, Math.max(0, numberFromEnv(process.env.ML_DATA_SAMPLE_RATE, 0.1)));
-const isBlobCacheEnabled = () => boolFromEnv(process.env.BLOB_CACHE_ENABLED, true);
-const getBlobCacheMinHits = () => Math.min(20, Math.max(0, Math.floor(numberFromEnv(process.env.BLOB_CACHE_MIN_HITS, 2))));
 const getMemoryCacheMaxEntries = () => Math.min(2000, Math.max(10, Math.floor(numberFromEnv(process.env.MEMORY_CACHE_MAX_ENTRIES, 200))));
-const CACHE_PROMOTION_RETRY_MS = 60 * 60 * 1000;
-
-const buildPublicBlobUrl = (path: string): string | null => {
-  const explicitBase = process.env.BLOB_PUBLIC_BASE_URL;
-  if (explicitBase) {
-    return `${explicitBase.replace(/\/$/, '')}/${path.split('/').map(encodeURIComponent).join('/')}`;
-  }
-
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  const storeId = token?.split('_')[3];
-  if (!storeId) return null;
-  return `https://${storeId}.public.blob.vercel-storage.com/${path.split('/').map(encodeURIComponent).join('/')}`;
-};
-
-const safeList = async (prefix: string): Promise<{ blobs: SafeBlob[]; degraded: boolean }> => {
-  try {
-    const res = await list({ prefix });
-    return { blobs: res.blobs, degraded: false };
-  } catch (err) {
-    console.error('[Blob] list failed:', (err as Error).message);
-    blobDegraded = true;
-    const mem = inMemoryBlobs.get(prefix);
-    return { blobs: mem ? [{ url: mem.url, uploadedAt: mem.uploadedAt }] : [], degraded: true };
-  }
-};
-
-const safeHead = async (path: string): Promise<{ blob: SafeBlob | null; degraded: boolean }> => {
-  const mem = inMemoryBlobs.get(path);
-  if (mem) {
-    return { blob: { url: mem.url, uploadedAt: mem.uploadedAt }, degraded: false };
-  }
-
-  const url = buildPublicBlobUrl(path);
-  if (!url) {
-    return { blob: null, degraded: false };
-  }
-
-  try {
-    const blob = await head(url);
-    return { blob: { url: blob.url, uploadedAt: blob.uploadedAt }, degraded: false };
-  } catch (err) {
-    if (err instanceof BlobNotFoundError || (err as Error).name === 'BlobNotFoundError') {
-      return { blob: null, degraded: false };
-    }
-    console.error('[Blob] head failed:', (err as Error).message);
-    blobDegraded = true;
-    return { blob: null, degraded: true };
-  }
-};
-
-const safePut = async (path: string, body: string): Promise<{ degraded: boolean }> => {
-  try {
-    await put(path, body, {
-      access: 'public',
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      contentType: 'application/json',
-    });
-    return { degraded: false };
-  } catch (err) {
-    console.error('[Blob] put failed:', (err as Error).message);
-    blobDegraded = true;
-    inMemoryBlobs.set(path, {
-      data: body,
-      uploadedAt: new Date(),
-      url: `mem://${path}`,
-    });
-    return { degraded: true };
-  }
-};
-
-const safeFetchBlob = async (url: string): Promise<Response | null> => {
-  if (url.startsWith('mem://')) {
-    const mem = inMemoryBlobs.get(url.slice('mem://'.length));
-    if (!mem) return null;
-    return new Response(mem.data, { status: 200 });
-  }
-  try {
-    return await fetch(url);
-  } catch (err) {
-    console.error('[Blob] fetch failed:', (err as Error).message);
-    blobDegraded = true;
-    return null;
-  }
-};
-
-const isBlobDegraded = () => blobDegraded;
-const resetBlobHealth = () => { blobDegraded = false; };
+const getMemoryRateLimitMaxEntries = () => Math.min(20_000, Math.max(100, Math.floor(numberFromEnv(process.env.MEMORY_RATE_LIMIT_MAX_ENTRIES, 5_000))));
 
 /**
  * Mask phone numbers and LINE IDs to protect PII before caching.
@@ -170,7 +64,6 @@ type ErrorCode =
   | 'LLM_QUOTA'
   | 'LLM_FAILED'
   | 'LOCAL_RATE_LIMIT'
-  | 'STORAGE_DEGRADED'
   | 'INVALID_INPUT'
   | 'TOTAL_OUTAGE'
   | 'SERVER_ERROR';
@@ -183,10 +76,9 @@ interface Degradation {
   services: string[];
 }
 
-// Service weights — see plan: Gemini=10 (critical), Blob=2, side-sources=1
+// Service weights — Gemini is critical; optional verification sources are 1.
 const SERVICE_WEIGHT: Record<string, number> = {
   Gemini: 10,
-  'Vercel Blob': 2,
   'Safe Browsing': 1,
   VirusTotal: 1,
   Cofacts: 1,
@@ -373,8 +265,8 @@ export const canonicalizeCacheInput = (input: string, inputType: string): string
  * Generate cache key for different input types.
  *
  * SHA-256 (truncated to 96 bits) — the previous 32-bit rolling hash could
- * collide and serve one input's cached verdict for a different input, and
- * phone keys embedded the raw number (PII) in a public blob path.
+ * collide and serve one input's cached verdict for a different input. Hashing
+ * also keeps phone numbers and message contents out of in-memory cache keys.
  */
 const generateCacheKey = (input: string, inputType: string): string => {
   const canonicalInput = canonicalizeCacheInput(input, inputType);
@@ -479,16 +371,10 @@ const getClientIP = (req: any): string => {
 };
 
 /**
- * Hash IP for privacy (simple hash, not cryptographic)
+ * Hash IP for privacy before retaining a warm-instance rate-limit key.
  */
 const hashIP = (ip: string): string => {
-  let hash = 0;
-  for (let i = 0; i < ip.length; i++) {
-    const char = ip.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return Math.abs(hash).toString(36);
+  return createHash('sha256').update(ip).digest('hex').slice(0, 24);
 };
 
 /**
@@ -510,99 +396,42 @@ const extractJSON = (text: string): string => {
   return jsonMatch ? jsonMatch[0] : cleaned;
 };
 
-/**
- * Safely parse JSON from a fetch response, returning null on failure
- */
-const safeParseJSON = async (response: Response): Promise<any | null> => {
-  try {
-    if (!response.ok) {
-      return null;
-    }
-    const text = await response.text();
-    // Validate it looks like JSON before parsing
-    if (!text || !text.trim().startsWith('{')) {
-      return null;
-    }
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-};
-
 const checkMemoryRateLimit = (ip: string): { allowed: boolean; remaining: number } => {
   const ipHash = hashIP(ip);
   const now = Date.now();
   const current = inMemoryRateLimits.get(ipHash);
 
   if (!current || now - current.windowStart > RATE_LIMIT_WINDOW_MS) {
+    if (!current) {
+      for (const [key, entry] of inMemoryRateLimits) {
+        if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) inMemoryRateLimits.delete(key);
+      }
+      const maxEntries = getMemoryRateLimitMaxEntries();
+      while (inMemoryRateLimits.size >= maxEntries) {
+        const oldestKey = inMemoryRateLimits.keys().next().value;
+        if (!oldestKey) break;
+        inMemoryRateLimits.delete(oldestKey);
+      }
+    }
+    inMemoryRateLimits.delete(ipHash);
     inMemoryRateLimits.set(ipHash, { windowStart: now, count: 1 });
     return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
   }
 
   if (current.count >= MAX_REQUESTS_PER_WINDOW) {
+    inMemoryRateLimits.delete(ipHash);
+    inMemoryRateLimits.set(ipHash, current);
     return { allowed: false, remaining: 0 };
   }
 
   current.count += 1;
+  inMemoryRateLimits.delete(ipHash);
+  inMemoryRateLimits.set(ipHash, current);
   return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - current.count };
 };
 
 /**
- * Check and update rate limit for an IP using Blob.
- * This is opt-in because every request consumes Blob advanced operations.
- */
-const checkBlobRateLimit = async (ip: string): Promise<{ allowed: boolean; remaining: number }> => {
-  const ipHash = hashIP(ip);
-  const rateLimitPath = `ratelimit/${ipHash}.json`;
-
-  const { blobs } = await safeList(rateLimitPath);
-  const now = Date.now();
-
-  if (blobs.length > 0) {
-    const blob = blobs[0];
-    const response = await safeFetchBlob(blob.url);
-    const data = response ? await safeParseJSON(response) : null;
-
-    // If parsing failed or data is invalid, treat as no existing rate limit
-    if (!data || typeof data.windowStart !== 'number' || typeof data.count !== 'number') {
-      await safePut(rateLimitPath, JSON.stringify({ windowStart: now, count: 1 }));
-      return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
-    }
-
-    // Check if window has expired
-    if (now - data.windowStart > RATE_LIMIT_WINDOW_MS) {
-      await safePut(rateLimitPath, JSON.stringify({ windowStart: now, count: 1 }));
-      return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
-    }
-
-    // Window still active - check count
-    if (data.count >= MAX_REQUESTS_PER_WINDOW) {
-      return { allowed: false, remaining: 0 };
-    }
-
-    // Increment count
-    const newData = { windowStart: data.windowStart, count: data.count + 1 };
-    await safePut(rateLimitPath, JSON.stringify(newData));
-    return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - newData.count };
-  }
-
-  // No existing rate limit - create new
-  await safePut(rateLimitPath, JSON.stringify({ windowStart: now, count: 1 }));
-  return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
-};
-
-/**
- * Check and update rate limit for an IP.
- */
-const checkRateLimit = async (ip: string): Promise<{ allowed: boolean; remaining: number }> => {
-  if (getRateLimitBackend() === 'blob') {
-    return checkBlobRateLimit(ip);
-  }
-  return checkMemoryRateLimit(ip);
-};
-
-/**
- * Build cache file path for Vercel Blob
+ * Build an opaque key for the bounded in-memory analysis cache.
  */
 const buildCachePath = (cacheKey: string, language: string): string => {
   return `cache/${cacheKey}-${language}.json`;
@@ -625,7 +454,6 @@ const rememberAnalysisInMemory = (
   cachePath: string,
   data: any,
   cachedAt = Date.now(),
-  persisted = false,
 ): MemoryAnalysisEntry => {
   const existing = memoryAnalysisCache.get(cachePath);
   const entry: MemoryAnalysisEntry = {
@@ -633,8 +461,6 @@ const rememberAnalysisInMemory = (
     cachedAt,
     expiresAt: cachedAt + CACHE_DURATION_MS,
     hits: Math.max(1, existing?.hits ?? 1),
-    persisted: persisted || existing?.persisted || false,
-    nextPromotionAt: existing?.nextPromotionAt ?? 0,
   };
 
   // Map insertion order is our bounded LRU queue.
@@ -644,36 +470,11 @@ const rememberAnalysisInMemory = (
   return entry;
 };
 
-const promoteHotAnalysisToBlob = async (cachePath: string, entry: MemoryAnalysisEntry) => {
-  const minHits = getBlobCacheMinHits();
-  const now = Date.now();
-  if (
-    !isBlobCacheEnabled() ||
-    minHits === 0 ||
-    entry.persisted ||
-    entry.hits < minHits ||
-    entry.nextPromotionAt > now
-  ) return false;
-
-  const result = await safePut(cachePath, JSON.stringify(entry.data));
-  if (result.degraded) {
-    // Do not hammer an exhausted/unavailable Blob store on every hot-cache hit.
-    entry.nextPromotionAt = now + CACHE_PROMOTION_RETRY_MS;
-    return false;
-  }
-
-  entry.persisted = true;
-  entry.nextPromotionAt = 0;
-  console.log(`Promoted hot analysis to Blob after ${entry.hits} hits: ${cachePath}`);
-  return true;
-};
-
 /**
- * Check the bounded in-memory L1 first, then the shared Blob L2. A second L1
- * hit promotes the entry to Blob by default, eliminating writes for one-off
- * scam messages while preserving shared cache for repeated campaigns.
+ * Read from the bounded warm-instance cache. Entries expire after 72 hours;
+ * cold starts intentionally begin empty instead of querying external storage.
  */
-const getCachedAnalysis = async (handle: string, language: string) => {
+const getCachedAnalysis = (handle: string, language: string) => {
   const cachePath = buildCachePath(handle, language);
   const now = Date.now();
 
@@ -685,7 +486,6 @@ const getCachedAnalysis = async (handle: string, language: string) => {
       memoryEntry.hits = Math.min(1_000_000, memoryEntry.hits + 1);
       memoryAnalysisCache.delete(cachePath);
       memoryAnalysisCache.set(cachePath, memoryEntry);
-      await promoteHotAnalysisToBlob(cachePath, memoryEntry);
       console.log(`Memory cache hit for ${handle} (hits: ${memoryEntry.hits})`);
       return {
         data: memoryEntry.data,
@@ -694,75 +494,22 @@ const getCachedAnalysis = async (handle: string, language: string) => {
       };
     }
   }
-
-  if (!isBlobCacheEnabled()) return null;
-  const { blob } = await safeHead(cachePath);
-
-  if (!blob) {
-    return null;
-  }
-
-  const uploadedAt = new Date(blob.uploadedAt).getTime();
-  const age = Date.now() - uploadedAt;
-
-  // Check if cache is expired (> 72 hours)
-  if (age > CACHE_DURATION_MS) {
-    console.log(`Cache expired for ${handle} (age: ${Math.round(age / 1000 / 60)} minutes)`);
-    return null;
-  }
-
-  // Fetch the cached data
-  const response = await safeFetchBlob(blob.url);
-  const data = response ? await safeParseJSON(response) : null;
-
-  // If parsing failed, treat as cache miss
-  if (!data) {
-    console.log(`Cache data invalid for ${handle}, treating as miss`);
-    return null;
-  }
-
-  console.log(`Cache hit for ${handle} (age: ${Math.round(age / 1000 / 60)} minutes)`);
-  rememberAnalysisInMemory(cachePath, data, uploadedAt, true);
-  return {
-    data,
-    cachedAt: uploadedAt,
-    tier: 'blob' as const,
-  };
+  return null;
 };
 
 /**
- * Always retain a bounded warm-instance copy. Blob persistence is admitted
- * only after the configured hit threshold (2 by default).
+ * Retain a bounded warm-instance copy. This function performs no network or
+ * storage I/O and therefore cannot consume metered Blob operations.
  */
-const setCachedAnalysis = async (
+const setCachedAnalysis = (
   handle: string,
   language: string,
   data: any,
-  forceRefresh = false,
 ) => {
   const cachePath = buildCachePath(handle, language);
-  const previousEntry = memoryAnalysisCache.get(cachePath);
   const entry = rememberAnalysisInMemory(cachePath, data);
-
-  if (forceRefresh && isBlobCacheEnabled() && getBlobCacheMinHits() > 0) {
-    // Refresh an existing L2 value, but do not let a caller turn arbitrary
-    // first-time forceRefresh requests into Blob writes. A cold instance uses
-    // the cheap head operation to distinguish those cases.
-    let blobAlreadyExists = previousEntry?.persisted ?? false;
-    if (!blobAlreadyExists) {
-      const { blob } = await safeHead(cachePath);
-      blobAlreadyExists = Boolean(blob);
-    }
-
-    if (blobAlreadyExists) {
-      entry.persisted = false;
-      entry.hits = Math.max(entry.hits, getBlobCacheMinHits());
-    }
-  }
-
-  await promoteHotAnalysisToBlob(cachePath, entry);
   return {
-    tier: entry.persisted ? 'blob' as const : 'memory' as const,
+    tier: 'memory' as const,
     hits: entry.hits,
   };
 };
@@ -2027,7 +1774,6 @@ export default async function handler(req: any, res: any) {
   const isBotRequest = botApiKey && requestBotKey === botApiKey;
 
   // Per-request degraded-service tracking
-  resetBlobHealth();
   const degradedServices: string[] = [];
 
   try {
@@ -2156,8 +1902,6 @@ export default async function handler(req: any, res: any) {
         delete normalizedCache.totalLosses;
         delete normalizedCache.sources;
 
-        // If Blob was degraded even on cache read, report it; otherwise L0.
-        const cacheDegraded: string[] = isBlobDegraded() ? ['Vercel Blob'] : [];
         res.setHeader('X-VerifyFirst-Cache', `HIT; tier=${cached.tier}`);
         return res.status(200).json({
           ...normalizedCache,
@@ -2165,7 +1909,7 @@ export default async function handler(req: any, res: any) {
           source: 'cache',
           cacheTier: cached.tier,
           cachedAt: cached.cachedAt,
-          degradation: computeDegradation(cacheDegraded)
+          degradation: computeDegradation([])
         });
       }
     }
@@ -2173,7 +1917,7 @@ export default async function handler(req: any, res: any) {
     // === RATE LIMITING (only for API calls, not cache hits; skipped for authenticated bots) ===
     if (!isBotRequest) {
       const clientIP = getClientIP(req);
-      const rateLimit = await checkRateLimit(clientIP);
+      const rateLimit = checkMemoryRateLimit(clientIP);
 
       res.setHeader('X-RateLimit-Limit', MAX_REQUESTS_PER_WINDOW);
       res.setHeader('X-RateLimit-Remaining', rateLimit.remaining);
@@ -2652,44 +2396,17 @@ OUTPUT JSON ONLY:
       fullData.riskSignals = fullData.riskSignals.map((s: any) => ({ ...s, evidence: maskPII(s.evidence) }));
     }
 
-    // Save to cache before responding. Fire-and-forget writes get killed when
-    // the invocation freezes after res.json() — every lost write is a future
-    // Gemini call we pay for again. safePut never throws.
-    const cacheStore = await setCachedAnalysis(cacheKey, language, fullData, Boolean(forceRefresh));
+    // Save synchronously to the bounded warm-instance cache before responding.
+    // This is memory-only and performs no external storage operation.
+    const cacheStore = setCachedAnalysis(cacheKey, language, fullData);
     res.setHeader('X-VerifyFirst-Cache', `MISS; stored=${cacheStore.tier}; hits=${cacheStore.hits}`);
 
     const submissionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const submissionTs = new Date().toISOString();
     const canCollectML = !isBotRequest && !forceRefresh && inputContent.length <= 10000;
-    const shouldWriteMLBlob = canCollectML && isMLBlobCollectionEnabled() && Math.random() < getMLBlobSampleRate();
 
-    // 1. Optional full ML record. Disabled by default to protect Blob's 2K
-    // Hobby advanced-operation budget; enable with ML_DATA_BLOB_ENABLED=true.
-    if (shouldWriteMLBlob) {
-      const mlRecord = {
-        id: submissionId,
-        timestamp: submissionTs,
-        language,
-        inputType: detectedType,
-        raw: { input: inputContent, sanitized: sanitizedInput },
-        analysis: {
-          trustScore: fullData.trustScore,
-          scamProbability: fullData.scamProbability,
-          verdict: fullData.verdict,
-          identityStatus: fullData.identityStatus,
-          riskSignals: fullData.riskSignals,
-          credibilityStrengths: fullData.credibilityStrengths,
-          riskFactors: fullData.riskFactors,
-          suggestedActions: fullData.suggestedActions,
-          groundedSearch: fullData.groundedSearch,
-        },
-      };
-      const blobPath = `ml-data/${submissionTs.slice(0, 7)}/${submissionId}.json`;
-      put(blobPath, JSON.stringify(mlRecord), { access: 'public', addRandomSuffix: false })
-        .catch(() => { /* silently ignore */ });
-    }
-
-    // 2. Log flat summary to Google Sheets for human review & labeling
+    // Log a flat summary to Google Sheets for human review & labeling when a
+    // webhook is explicitly configured. No full records are written to Blob.
     // Google Apps Script redirects POST → must follow redirect manually (302 converts POST→GET otherwise)
     const webhookUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL;
     if (canCollectML && webhookUrl && inputContent.length <= 500) {
@@ -2708,7 +2425,6 @@ OUTPUT JSON ONLY:
       void logToGoogleSheets(webhookUrl, sheetsPayload);
     }
 
-    if (isBlobDegraded()) degradedServices.push('Vercel Blob');
     return res.status(200).json({
       ...fullData,
       source: 'api',

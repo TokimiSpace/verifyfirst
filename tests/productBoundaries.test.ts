@@ -41,12 +41,50 @@ describe('To C / To B product boundaries', () => {
   it('marks every enterprise entry as experimental and links the lab modules', () => {
     expect(business).toContain('EXPERIMENTAL · 實驗性功能');
     expect(business).toContain('尚未承諾 SLA');
-    expect(business).toContain("'/trust-pathways/'");
-    expect(business).toContain("'/update-trust/'");
+    expect(business).toContain('href="/trust-pathways/"');
+    expect(business).toContain('href="/update-trust/"');
+    expect(business).toContain('<TrustVerificationPanel');
+    expect(business).toContain('verificationRecords={verificationRecords}');
     expect(trustPathways).toContain('EXPERIMENTAL');
     expect(updateTrust).toContain('EXPERIMENTAL');
     expect(trustPathways).toContain('href="/business/"');
     expect(updateTrust).toContain('href="/business/"');
+  });
+
+  it('keeps raw CESR in memory while persisting verification summaries only', () => {
+    const verifier = read('components/business/TrustVerificationPanel.tsx');
+    const client = read('services/vleiClient.ts');
+    expect(verifier).toContain('原始 CESR 只留在瀏覽器記憶體');
+    expect(verifier).toContain("kind: 'VLEI_CHAIN'");
+    expect(business).toContain('verificationRecords');
+    expect(business).not.toContain('rawCesr');
+    expect(client).toContain('MAX_VLEI_CESR_BYTES = 128 * 1024');
+    expect(client).toContain('Production verification cannot bypass KEL/TEL anchoring');
+  });
+
+  it('fails closed across the enterprise credential and evidence boundaries', () => {
+    const verifier = read('components/business/TrustVerificationPanel.tsx');
+    const client = read('services/vleiClient.ts');
+    const canonicalVerifier = read('public/update-trust/said.js');
+    const evidenceIntegrity = read('services/evidenceIntegrity.ts');
+    expect(client).toContain('assertStrictCesrFraming');
+    expect(client).toContain('resolveVleiRepresentedEntity');
+    expect(client).toContain("options.trustDomain === 'production' && locallyAllows");
+    expect(client).toContain('DENY_BACKEND_VERIFICATION_REQUIRED');
+    expect(canonicalVerifier).toContain("id: 'registry-issuer'");
+    expect(canonicalVerifier).toContain('DENY_REGISTRY_ISSUER_MISMATCH');
+    expect(verifier).toContain('DENY_LEI_NOT_CHECKED');
+    expect(verifier).toContain('DENY_LEI_LOOKUP_STALE');
+    expect(verifier).toContain('DENY_BACKEND_VERIFICATION_REQUIRED');
+    for (const provenanceField of ['sourceUrl', 'checkedAt', 'goldenCopyPublishDate', 'lookupDigest', 'LOOKUP_AGE_MAX_15_MINUTES']) {
+      expect(verifier).toContain(provenanceField);
+    }
+    expect(verifier).toContain('leiLookupInFlight.current = true');
+    expect(verifier).toContain('leiRecordRef.current = null');
+    expect(verifier).toContain('sealEvidenceBody(packetBody)');
+    expect(evidenceIntegrity).toContain('verifyEvidenceEnvelope');
+    expect(evidenceIntegrity).toContain("kind: 'SELF_CHECK_ONLY'");
+    expect(evidenceIntegrity).toContain("authenticity: 'UNSIGNED'");
   });
 
   it('documents release and trust invariants for open-source contributors', () => {

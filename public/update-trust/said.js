@@ -162,6 +162,7 @@ export function cesrDecode(qb64) {
 export function decodeIndexedSig(qb64) {
   if (qb64.length !== 88 || qb64[0] !== 'A') throw new Error('UNSUPPORTED_INDEXED_SIG');
   const index = B64_INDEX[qb64[1]];
+  if (!Number.isInteger(index)) throw new Error('INVALID_SIGNATURE_INDEX');
   const bytes = b64urlDecode('AA' + qb64.slice(2));
   return { index, raw: bytes.slice(2) };
 }
@@ -200,9 +201,33 @@ export function saidify(obj, labels = ['d']) {
 
 export function verifySaid(obj, labels = ['d']) {
   const expected = obj?.[labels[0]];
-  if (typeof expected !== 'string' || expected.length !== 44) return { ok: false, expected, computed: null, reason: 'NO_SAID' };
-  const { said } = saidify(obj, labels);
-  return { ok: said === expected, expected, computed: said, reason: said === expected ? 'SAID_MATCH' : 'SAID_MISMATCH' };
+  const missingLabels = labels.filter(label => typeof obj?.[label] !== 'string' || obj[label].length !== 44);
+  if (missingLabels.length) return { ok: false, expected, computed: null, reason: 'NO_SAID', missingLabels, mismatchedLabels: [] };
+  let result;
+  try { result = saidify(obj, labels); } catch {
+    return { ok: false, expected, computed: null, reason: 'INVALID_VERSION_STRING', missingLabels, mismatchedLabels: [] };
+  }
+  const { said, obj: normalized } = result;
+  const mismatchedLabels = labels.filter(label => obj[label] !== said);
+  const suppliedVersion = typeof obj?.v === 'string' ? parseVersion(obj.v) : null;
+  const expectedProtocol = typeof obj?.t === 'string' ? 'KERI' : 'ACDC';
+  const versionOk = typeof obj?.v !== 'string' || (
+    suppliedVersion?.proto === expectedProtocol
+    && suppliedVersion.major === 1
+    && suppliedVersion.minor === 0
+    && suppliedVersion.kind === 'JSON'
+    && obj.v === normalized.v
+  );
+  return {
+    ok: mismatchedLabels.length === 0 && versionOk,
+    expected,
+    computed: said,
+    reason: !versionOk ? 'VERSION_MISMATCH' : mismatchedLabels.length ? 'SAID_LABEL_MISMATCH' : 'SAID_MATCH',
+    missingLabels,
+    mismatchedLabels,
+    versionOk,
+    expectedVersion: normalized.v,
+  };
 }
 
 export const SAID_LABELS = { icp: ['d', 'i'], dip: ['d', 'i'], vcp: ['d', 'i'] };
@@ -266,14 +291,45 @@ export async function verifyEd25519(pubQb64, sigQb64Indexed, messageBytes) {
 /* ------------------------------------------------------------- vLEI SCHEMA */
 // Official schema SAIDs published in https://github.com/GLEIF-IT/vLEI-schema (main).
 export const VLEI_SCHEMAS = {
-  EBfdlu8R27Fbx: { said: 'EBfdlu8R27Fbx-ehrqwImnK-8Cm79sqbAQ4MmvEAYqao', key: 'QVI', title: 'Qualified vLEI Issuer Credential', file: 'qualified-vLEI-issuer-vLEI-credential.json', issuer: 'GLEIF', issuee: 'QVI', edges: {} },
-  ENPXp1vQzRF6J: { said: 'ENPXp1vQzRF6JwIuS-mp2U8Uf1MoADoP_GqQ62VsDZWY', key: 'LE', title: 'Legal Entity vLEI Credential', file: 'legal-entity-vLEI-credential.json', issuer: 'QVI', issuee: 'Legal Entity', edges: { qvi: 'EBfdlu8R27Fbx-ehrqwImnK-8Cm79sqbAQ4MmvEAYqao' } },
-  EKA57bKBKxr_k: { said: 'EKA57bKBKxr_kN7iN5i7lMUxpMG-s19dRcmov1iDxz-E', key: 'OOR_AUTH', title: 'OOR Authorization vLEI Credential', file: 'oor-authorization-vlei-credential.json', issuer: 'Legal Entity', issuee: 'QVI', edges: { le: 'ENPXp1vQzRF6JwIuS-mp2U8Uf1MoADoP_GqQ62VsDZWY' } },
-  EBNaNu_M9P5cg: { said: 'EBNaNu-M9P5cgrnfl2Fvymy4E_jvxxyjb70PRtiANlJy', key: 'OOR', title: 'Legal Entity Official Organizational Role vLEI Credential', file: 'legal-entity-official-organizational-role-vLEI-credential.json', issuer: 'QVI', issuee: 'Person (OOR)', edges: { auth: 'EKA57bKBKxr_kN7iN5i7lMUxpMG-s19dRcmov1iDxz-E' } },
-  EH6ekLjSr8V32: { said: 'EH6ekLjSr8V32WyFbGe1zXjTzFs9PkTYmupJ9H65O14g', key: 'ECR_AUTH', title: 'ECR Authorization vLEI Credential', file: 'ecr-authorization-vlei-credential.json', issuer: 'Legal Entity', issuee: 'QVI', edges: { le: 'ENPXp1vQzRF6JwIuS-mp2U8Uf1MoADoP_GqQ62VsDZWY' } },
-  EEy9PkikFcANV: { said: 'EEy9PkikFcANV1l7EHukCeXqrzT1hNZjGlUk7wuMO5jw', key: 'ECR', title: 'Legal Entity Engagement Context Role vLEI Credential', file: 'legal-entity-engagement-context-role-vLEI-credential.json', issuer: 'QVI or Legal Entity', issuee: 'Person (ECR)', edges: { auth: 'EH6ekLjSr8V32WyFbGe1zXjTzFs9PkTYmupJ9H65O14g', le: 'ENPXp1vQzRF6JwIuS-mp2U8Uf1MoADoP_GqQ62VsDZWY' } },
+  EBfdlu8R27Fbx: { said: 'EBfdlu8R27Fbx-ehrqwImnK-8Cm79sqbAQ4MmvEAYqao', key: 'QVI', title: 'Qualified vLEI Issuer Credential', file: 'qualified-vLEI-issuer-vLEI-credential.json', issuer: 'GLEIF', issuee: 'QVI', edges: {}, edgeVariants: [[]], edgeOperators: {}, attributes: ['i', 'dt', 'LEI'] },
+  ENPXp1vQzRF6J: { said: 'ENPXp1vQzRF6JwIuS-mp2U8Uf1MoADoP_GqQ62VsDZWY', key: 'LE', title: 'Legal Entity vLEI Credential', file: 'legal-entity-vLEI-credential.json', issuer: 'QVI', issuee: 'Legal Entity', edges: { qvi: 'EBfdlu8R27Fbx-ehrqwImnK-8Cm79sqbAQ4MmvEAYqao' }, edgeVariants: [['qvi']], edgeOperators: { qvi: null }, attributes: ['i', 'dt', 'LEI'] },
+  EKA57bKBKxr_k: { said: 'EKA57bKBKxr_kN7iN5i7lMUxpMG-s19dRcmov1iDxz-E', key: 'OOR_AUTH', title: 'OOR Authorization vLEI Credential', file: 'oor-authorization-vlei-credential.json', issuer: 'Legal Entity', issuee: 'QVI', edges: { le: 'ENPXp1vQzRF6JwIuS-mp2U8Uf1MoADoP_GqQ62VsDZWY' }, edgeVariants: [['le']], edgeOperators: { le: null }, attributes: ['i', 'dt', 'AID', 'LEI', 'personLegalName', 'officialRole'] },
+  EBNaNu_M9P5cg: { said: 'EBNaNu-M9P5cgrnfl2Fvymy4E_jvxxyjb70PRtiANlJy', key: 'OOR', title: 'Legal Entity Official Organizational Role vLEI Credential', file: 'legal-entity-official-organizational-role-vLEI-credential.json', issuer: 'QVI', issuee: 'Person (OOR)', edges: { auth: 'EKA57bKBKxr_kN7iN5i7lMUxpMG-s19dRcmov1iDxz-E' }, edgeVariants: [['auth']], edgeOperators: { auth: 'I2I' }, attributes: ['i', 'dt', 'LEI', 'personLegalName', 'officialRole'] },
+  EH6ekLjSr8V32: { said: 'EH6ekLjSr8V32WyFbGe1zXjTzFs9PkTYmupJ9H65O14g', key: 'ECR_AUTH', title: 'ECR Authorization vLEI Credential', file: 'ecr-authorization-vlei-credential.json', issuer: 'Legal Entity', issuee: 'QVI', edges: { le: 'ENPXp1vQzRF6JwIuS-mp2U8Uf1MoADoP_GqQ62VsDZWY' }, edgeVariants: [['le']], edgeOperators: { le: null }, attributes: ['i', 'dt', 'AID', 'LEI', 'personLegalName', 'engagementContextRole'] },
+  EEy9PkikFcANV: { said: 'EEy9PkikFcANV1l7EHukCeXqrzT1hNZjGlUk7wuMO5jw', key: 'ECR', title: 'Legal Entity Engagement Context Role vLEI Credential', file: 'legal-entity-engagement-context-role-vLEI-credential.json', issuer: 'QVI or Legal Entity', issuee: 'Person (ECR)', edges: { auth: 'EH6ekLjSr8V32WyFbGe1zXjTzFs9PkTYmupJ9H65O14g', le: 'ENPXp1vQzRF6JwIuS-mp2U8Uf1MoADoP_GqQ62VsDZWY' }, edgeVariants: [['auth'], ['le']], edgeOperators: { auth: 'I2I', le: null }, attributes: ['i', 'dt', 'LEI', 'personLegalName', 'engagementContextRole'] },
 };
 export const schemaBySaid = said => Object.values(VLEI_SCHEMAS).find(s => s.said === said) || null;
+
+// Exact top-level requirements from the pinned GLEIF schemas. The enterprise
+// workflow additionally requires v + a to be disclosed so local checks can run.
+const VLEI_TOP_LEVEL_REQUIRED = {
+  QVI: ['i', 'ri', 's', 'd'],
+  LE: ['i', 'ri', 's', 'd', 'e', 'r'],
+  OOR_AUTH: ['i', 'ri', 's', 'd', 'e', 'r'],
+  OOR: ['i', 'ri', 's', 'd', 'e', 'r'],
+  ECR_AUTH: ['i', 'ri', 's', 'd', 'e', 'r'],
+  ECR: ['v', 'u', 'i', 'ri', 's', 'd', 'r', 'a', 'e'],
+};
+
+// Hashes of the exact disclaimer constants in the pinned schemas. Keeping the
+// comparison values as digests avoids duplicating long legal text in the bundle.
+const VLEI_RULE_PROFILES = {
+  standard: {
+    usageDisclaimer: 'EDqHM4u6MnnYHelozk2PLQ6ylRllUmF_yKPdgNAUle3i',
+    issuanceDisclaimer: 'EB-pzQd0t5qdM53gxZoKuvDzoAoI2RX48x6K7nzaYorq',
+  },
+  ecrAuth: {
+    usageDisclaimer: 'EDqHM4u6MnnYHelozk2PLQ6ylRllUmF_yKPdgNAUle3i',
+    issuanceDisclaimer: 'EB-pzQd0t5qdM53gxZoKuvDzoAoI2RX48x6K7nzaYorq',
+    privacyDisclaimer: 'EC-gU_atZGz3q0J9EfjF81zkxXCTDuapJyG31Is5IWz-',
+  },
+  ecrRole: {
+    usageDisclaimer: 'EDqHM4u6MnnYHelozk2PLQ6ylRllUmF_yKPdgNAUle3i',
+    issuanceDisclaimer: 'EB-pzQd0t5qdM53gxZoKuvDzoAoI2RX48x6K7nzaYorq',
+    privacyDisclaimer: 'EJFr-k4veqMTPo2UlRLPl24SDMJUCU4jiFZ1FIa799jf',
+  },
+};
+const VLEI_RULE_PROFILE_BY_SCHEMA = { QVI: 'standard', LE: 'standard', OOR_AUTH: 'standard', OOR: 'standard', ECR_AUTH: 'ecrAuth', ECR: 'ecrRole' };
 
 /* ----------------------------------------------------- AGENT DELEGATION */
 // PROPOSED (non-GLEIF) schema: an ACDC issued by a vLEI role holder (ECR/OOR person) to an AI agent AID.
@@ -333,10 +389,81 @@ function summarizeAcdc(ked) {
   return { said: ked.d, schema: ked.s, schemaKey: schema?.key || (isProposedSchema(ked.s) ? 'AGENT_DELEGATION' : 'UNKNOWN'), schemaTitle: schema?.title || ked.s, issuer: ked.i, issuee: ked.a?.i, lei: ked.a?.LEI, registry: ked.ri, edges: ked.e && typeof ked.e === 'object' ? Object.fromEntries(Object.entries(ked.e).filter(([k]) => k !== 'd')) : {} };
 }
 
+function parseHexInteger(value) {
+  if (typeof value !== 'string' || !/^[0-9a-f]+$/i.test(value)) return null;
+  const parsed = Number.parseInt(value, 16);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+// KERI also supports weighted thresholds. This compact verifier does not yet
+// implement their rational-clause semantics, so every array form fails closed.
+function parseSigningThreshold(value, keyCount, { allowZero = false } = {}) {
+  if (!Number.isSafeInteger(keyCount) || keyCount < 0) return null;
+  if (keyCount === 0) return allowZero && parseHexInteger(value) === 0 ? 0 : null;
+  if (Array.isArray(value)) return null;
+  const parsed = parseHexInteger(value);
+  return parsed !== null && parsed >= 1 && parsed <= keyCount ? parsed : null;
+}
+
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function validateVleiRulesBlock(value, schemaKey) {
+  const profileName = VLEI_RULE_PROFILE_BY_SCHEMA[schemaKey];
+  const profile = VLEI_RULE_PROFILES[profileName];
+  if (!profile) return ['no pinned rules profile'];
+  if (!isPlainObject(value)) return ['rules block r must be disclosed as an object'];
+  const errors = [], expectedFields = Object.keys(profile), allowed = new Set(['d', ...expectedFields]);
+  if (typeof value.d !== 'string' || value.d.length !== 44) errors.push('r.d is not a 44-character SAID');
+  for (const key of Object.keys(value)) if (!allowed.has(key)) errors.push(`unknown rules field r.${key}`);
+  for (const field of expectedFields) {
+    const clause = value[field];
+    if (!isPlainObject(clause) || typeof clause.l !== 'string') {
+      errors.push(`missing r.${field}.l`);
+      continue;
+    }
+    if (Object.keys(clause).some(key => key !== 'l')) errors.push(`unknown field in r.${field}`);
+    if (blake3Digest(encoder.encode(clause.l)) !== profile[field]) errors.push(`r.${field}.l does not match the pinned schema constant`);
+  }
+  return errors;
+}
+
+function hasDuplicateDecodedSignatureIndexes(sigs) {
+  const indexes = new Set();
+  for (const signature of sigs || []) {
+    try {
+      const { index } = decodeIndexedSig(signature);
+      if (indexes.has(index)) return true;
+      indexes.add(index);
+    } catch {
+      // A malformed signature is rejected by signature verification itself.
+    }
+  }
+  return false;
+}
+
+// This compact browser verifier intentionally supports only the event families
+// whose state transitions it validates below. Unknown-but-well-formed events
+// must never be silently ignored: a backend verifier can support a wider KERI
+// surface, while this preflight fails closed.
+const SUPPORTED_KEL_EVENT_TYPES = new Set(['icp', 'rot', 'ixn']);
+const SUPPORTED_TEL_EVENT_TYPES = new Set(['vcp', 'iss', 'rev']);
+
+function unsupportedMessageType(ked) {
+  const version = parseVersion(ked?.v);
+  if (!version) return null; // Version/SAID integrity reports this separately.
+  if (version.proto === 'ACDC') return typeof ked.t === 'undefined' ? null : `ACDC:${ked.t}`;
+  if (version.proto !== 'KERI') return null;
+  return SUPPORTED_KEL_EVENT_TYPES.has(ked.t) || SUPPORTED_TEL_EVENT_TYPES.has(ked.t)
+    ? null
+    : `KERI:${String(ked.t || '(missing)')}`;
+}
+
 /**
  * @typedef {{ ked: any, attachment?: string, sigs?: string[], error?: string, raw?: string }} CesrMessage
  * @typedef {{ id: string, ok: boolean, label: string, detail: string, level: string, anchored?: boolean }} Check
- * @typedef {{ ri: string, issuerAid: string, vcpSaidOk: boolean, anchored: boolean, events: number }} RegistryInfo
+ * @typedef {{ ri: string, issuerAid: string, vcpSaidOk: boolean, anchored: boolean, valid: boolean, errors: string[], events: number }} RegistryInfo
  * @typedef {{ checks: Check[], credentials: any[], aids: Record<string, any>, registries: Record<string, RegistryInfo>, decision: any, signaturesUnverifiable?: boolean }} ChainReport
  * @typedef {{ rootAid?: string|null, extraAcdcs?: any[], revoked?: Set<string>, now?: Date|null, verifySignatures?: boolean, leafSaid?: string|null, unanchoredOk?: Set<string> }} ChainOptions
  */
@@ -347,26 +474,86 @@ function summarizeAcdc(ked) {
 export async function verifyChain(messages, options = {}) {
   const { rootAid = null, extraAcdcs = [], revoked = new Set(), now = new Date(), verifySignatures = true, leafSaid = null, unanchoredOk = new Set() } = options;
   const corrupt = messages.filter(m => !m.ked);
-  const events = messages.filter(m => m.ked).map(m => m.ked);
+  const parsedMessages = messages.filter(m => m.ked);
+  const rawEvents = parsedMessages.map(m => m.ked);
   /** @type {ChainReport} */
   const report = { checks: [], credentials: [], aids: {}, registries: {}, decision: null };
   const push = (id, ok, label, detail, level = 'BROWSER') => report.checks.push({ id, ok, label, detail, level });
-  push('parse', corrupt.length === 0, corrupt.length ? `CESR stream · ${corrupt.length} message(s) failed to parse` : `CESR stream · ${events.length} messages parsed`, corrupt.length ? corrupt.map(c => c.error).join(' · ') : 'Brace-balanced JSON bodies with CESR attachments; nothing is dropped silently.');
-  const kels = {}, tels = {}, acdcs = [];
-  for (const ked of events) {
-    if (ked.v?.startsWith('ACDC')) { acdcs.push(ked); continue; }
-    if (['icp', 'dip', 'rot', 'ixn'].includes(ked.t)) (kels[ked.i] ||= []).push(ked);
-    if (['vcp', 'iss', 'rev', 'bis', 'brv'].includes(ked.t)) (tels[ked.t === 'vcp' ? ked.i : ked.ri] ||= []).push(ked);
-  }
-  for (const extra of extraAcdcs) acdcs.push(extra);
+  push('parse', corrupt.length === 0, corrupt.length ? `CESR stream · ${corrupt.length} message(s) failed to parse` : `CESR stream · ${rawEvents.length} messages parsed`, corrupt.length ? corrupt.map(c => c.error).join(' · ') : 'Brace-balanced JSON bodies with CESR attachments; nothing is dropped silently.');
 
-  // 1. SAID integrity for every message (dedupe repeated KEL copies in the stream)
-  const seen = new Set(); let saidOk = 0, saidTotal = 0;
-  messages = messages.filter(m => m.ked);
-  for (const ked of events) {
-    const key = `${ked.t || 'acdc'}:${ked.d}`; if (seen.has(key)) continue; seen.add(key); saidTotal++;
-    const r = verifySaid(ked, saidLabelsFor(ked)); if (r.ok) saidOk++;
-    if (!r.ok) push(`said:${ked.d}`, false, `SAID mismatch · ${ked.t || 'ACDC'}`, `expected ${r.expected} computed ${r.computed}`);
+  // Replayed fixture streams legitimately repeat identical KEL messages. Keep one
+  // canonical body and merge distinct signatures, but reject a reused (type, SAID)
+  // identity carrying a different body.
+  const primaryByIdentity = new Map(), bodiesByIdentity = new Map(), distinctObjects = [], duplicateConflicts = new Set();
+  const candidates = [
+    ...parsedMessages,
+    ...extraAcdcs.map(ked => ({ ked, attachment: '', sigs: [] })),
+  ];
+  for (let index = 0; index < candidates.length; index++) {
+    const message = candidates[index], ked = message.ked;
+    const hasIdentity = typeof ked?.d === 'string' && ked.d.length > 0;
+    const identity = hasIdentity ? `${ked.t || 'acdc'}:${ked.d}` : `missing:${index}`;
+    // KERI SAIDs commit to serialization order, so a different member order is
+    // not treated as the same replayed event body.
+    const canonical = JSON.stringify(ked);
+    let bodies = bodiesByIdentity.get(identity);
+    if (!bodies) { bodies = new Set(); bodiesByIdentity.set(identity, bodies); }
+    if (!bodies.has(canonical)) { bodies.add(canonical); distinctObjects.push(ked); }
+    const existing = primaryByIdentity.get(identity);
+    if (!existing) {
+      primaryByIdentity.set(identity, {
+        ...message,
+        sigs: [...new Set(message.sigs || [])],
+        duplicateSignatureIndexes: hasDuplicateDecodedSignatureIndexes(message.sigs || []),
+        canonical,
+      });
+      continue;
+    }
+    if (existing.canonical !== canonical) {
+      duplicateConflicts.add(identity);
+      continue;
+    }
+    existing.duplicateSignatureIndexes ||= hasDuplicateDecodedSignatureIndexes(message.sigs || []);
+    for (const signature of message.sigs || []) if (!existing.sigs.includes(signature)) existing.sigs.push(signature);
+    existing.duplicateSignatureIndexes ||= hasDuplicateDecodedSignatureIndexes(existing.sigs);
+  }
+  const uniqueMessages = [...primaryByIdentity.values()];
+  const events = uniqueMessages.map(message => message.ked);
+  push(
+    'duplicate-event',
+    duplicateConflicts.size === 0,
+    duplicateConflicts.size ? `Duplicate event conflict · ${duplicateConflicts.size}` : 'Duplicate event bodies · consistent',
+    duplicateConflicts.size ? `Same type + SAID carried different bodies: ${[...duplicateConflicts].join(', ')}` : 'Byte-equivalent replayed event bodies are de-duplicated; distinct signature attachments are merged.',
+  );
+
+  const unsupportedTypes = uniqueMessages
+    .map(message => unsupportedMessageType(message.ked))
+    .filter(Boolean);
+  push(
+    'message-type',
+    unsupportedTypes.length === 0,
+    unsupportedTypes.length ? `Unsupported event types · ${unsupportedTypes.length}` : 'Supported event types · complete semantic coverage',
+    unsupportedTypes.length
+      ? `This browser verifier does not implement: ${[...new Set(unsupportedTypes)].join(', ')}. No unsupported event is ignored.`
+      : 'Every supplied message is an ACDC or a supported icp/rot/ixn/vcp/iss/rev event.',
+  );
+
+  const kels = {}, tels = {}, acdcs = [];
+  for (const message of uniqueMessages) {
+    const ked = message.ked;
+    if (ked.v?.startsWith('ACDC')) { acdcs.push(ked); continue; }
+    if (SUPPORTED_KEL_EVENT_TYPES.has(ked.t)) (kels[ked.i] ||= []).push(message);
+    if (SUPPORTED_TEL_EVENT_TYPES.has(ked.t)) (tels[ked.t === 'vcp' ? ked.i : ked.ri] ||= []).push(ked);
+  }
+
+  // 1. SAID integrity for every distinct event body. A conflicting duplicate is
+  // checked too, even though only the first body is allowed into chain indexes.
+  let saidOk = 0, saidTotal = 0;
+  for (const ked of distinctObjects) {
+    saidTotal++;
+    const r = verifySaid(ked, saidLabelsFor(ked));
+    if (r.ok) saidOk++;
+    if (!r.ok) push(`said:${ked.d}`, false, `SAID mismatch · ${ked.t || 'ACDC'}`, `expected ${r.expected} computed ${r.computed}${r.mismatchedLabels?.length ? ` · labels ${r.mismatchedLabels.join(',')}` : ''}`);
   }
   push('said', saidOk === saidTotal, `BLAKE3 SAID · ${saidOk}/${saidTotal} messages self-addressing`, 'Every KEL event, TEL event and ACDC digest recomputed in the browser (CESR code E = Blake3-256).');
 
@@ -375,57 +562,174 @@ export async function verifyChain(messages, options = {}) {
   for (const acdc of acdcs) for (const k of ['a', 'e']) if (acdc[k] && typeof acdc[k] === 'object' && acdc[k].d) { nestedTotal++; if (verifySaid(acdc[k]).ok) nestedOk++; }
   push('nested', nestedOk === nestedTotal, `ACDC attribute／edge block SAIDs · ${nestedOk}/${nestedTotal}`, 'a.d and e.d recomputed; the rules block (r.d) is a schema constant and is not recomputed.');
 
-  // 3. AID self-certification + KEL signatures
+  // 3. AID self-certification + KEL continuity, key state, and signatures.
   for (const [aid, kel] of Object.entries(kels)) {
-    const icp = kel.find(e => e.t === 'icp' || e.t === 'dip');
-    const info = { aid, events: kel.length, icpSaidOk: false, keys: icp?.k || [], sigs: [], anchors: [] };
-    if (icp) {
-      info.icpSaidOk = verifySaid(icp, ['d', 'i']).ok && icp.i === aid;
-      if (verifySignatures) {
-        // Key-state aware: each event is verified with the keys established by the latest icp/dip/rot at or before it.
-        const uniq = new Map(); for (const m of messages) if (m.ked.i === aid && ['icp', 'dip', 'ixn', 'rot'].includes(m.ked.t)) uniq.set(m.ked.d, m);
-        const ordered = [...uniq.values()].sort((a, b) => parseInt(a.ked.s, 16) - parseInt(b.ked.s, 16));
-        let keys = [], nextDigests = [];
-        for (const m of ordered) {
-          const ked = m.ked;
-          if (ked.t === 'icp' || ked.t === 'dip') { keys = ked.k; nextDigests = ked.n || []; }
-          let preRotationOk = true;
-          if (ked.t === 'rot') {
-            preRotationOk = nextDigests.length > 0 && blake3Digest(encoder.encode(ked.k[0])) === nextDigests[0];
-            info.rotations = (info.rotations || 0) + 1; info.preRotation = preRotationOk;
-            keys = ked.k; nextDigests = ked.n || [];
-          }
-          const raw = saidify(ked, saidLabelsFor(ked)).raw;
-          // Signing threshold: kt is a hex integer or a weighted array; weighted thresholds are treated conservatively (all keys).
-          const threshold = Array.isArray(ked.kt) ? keys.length : Math.max(1, parseInt(ked.kt ?? '1', 16) || 1);
-          const results = await Promise.all(m.sigs.map(async sigQb64 => {
-            let index = 0; try { index = decodeIndexedSig(sigQb64).index; } catch { return { ok: false, reason: 'MALFORMED_SIGNATURE' }; }
-            const key = keys[index];
-            return key ? { index, ...(await verifyEd25519(key, sigQb64, raw)) } : { index, ok: false, reason: 'SIGNATURE_INDEX_OUT_OF_RANGE' };
-          }));
-          const valid = results.filter(r => r.ok).length, unsupported = results.find(r => r.reason === 'ED25519_UNSUPPORTED_IN_RUNTIME' || r.reason === 'WEBCRYPTO_UNAVAILABLE');
-          const ok = preRotationOk && results.length > 0 && valid >= threshold;
-          info.sigs.push({ t: ked.t, s: ked.s, d: ked.d, ok, threshold, valid, provided: results.length, reason: !preRotationOk ? 'PRE_ROTATION_VIOLATED' : results.length === 0 ? 'NO_CONTROLLER_SIGNATURE' : unsupported ? unsupported.reason : ok ? 'SIGNATURE_VALID' : `THRESHOLD_NOT_MET · ${valid}/${threshold}` });
-        }
-      }
-      for (const e of kel) if (e.t === 'ixn') for (const seal of e.a || []) info.anchors.push({ seq: e.s, seal });
+    const sequenceOf = message => parseHexInteger(message.ked.s);
+    const ordered = [...kel].sort((a, b) => (sequenceOf(a) ?? Number.MAX_SAFE_INTEGER) - (sequenceOf(b) ?? Number.MAX_SAFE_INTEGER));
+    const inceptions = ordered.filter(message => message.ked.t === 'icp');
+    const icp = inceptions[0]?.ked;
+    const info = { aid, events: kel.length, icpSaidOk: false, kelValid: false, kelErrors: [], keys: icp?.k || [], sigs: [], anchors: [] };
+    const structuralErrors = [], candidateAnchors = [];
+    if (inceptions.length !== 1) structuralErrors.push(`INCEPTION_COUNT_${inceptions.length}`);
+    if (!icp || sequenceOf(inceptions[0]) !== 0 || ordered[0] !== inceptions[0]) structuralErrors.push('INCEPTION_NOT_FIRST_AT_S0');
+    if (icp) info.icpSaidOk = verifySaid(icp, ['d', 'i']).ok && icp.d === aid && icp.i === aid;
+
+    const sequenceCounts = new Map();
+    for (const message of ordered) {
+      const sequence = sequenceOf(message);
+      if (sequence === null) structuralErrors.push(`INVALID_SEQUENCE_${message.ked.s}`);
+      else sequenceCounts.set(sequence, (sequenceCounts.get(sequence) || 0) + 1);
     }
+    for (const [sequence, count] of sequenceCounts) if (count > 1) structuralErrors.push(`DUPLICATE_SEQUENCE_${sequence}`);
+
+    let keys = [], currentThreshold = null, nextDigests = [], nextThreshold = null, prior = null, chainHealthy = true;
+    for (let index = 0; index < ordered.length; index++) {
+      const message = ordered[index], ked = message.ked, sequence = sequenceOf(message), eventErrors = [];
+      if (index === 0 && ked.t !== 'icp') eventErrors.push('MISSING_INCEPTION');
+      if (index > 0) {
+        if (sequence === null || prior?.sequence === null || sequence !== prior.sequence + 1) eventErrors.push('SEQUENCE_GAP_OR_FORK');
+        if (typeof ked.p !== 'string' || ked.p !== prior?.ked.d) eventErrors.push('PRIOR_EVENT_MISMATCH');
+        if (ked.t === 'icp') eventErrors.push('DUPLICATE_INCEPTION');
+      }
+      if (!chainHealthy) eventErrors.push('PRIOR_EVENT_INVALID');
+
+      if (ked.t === 'icp') {
+        keys = Array.isArray(ked.k) && ked.k.every(key => typeof key === 'string') ? [...ked.k] : [];
+        currentThreshold = parseSigningThreshold(ked.kt, keys.length);
+        nextDigests = Array.isArray(ked.n) && ked.n.every(digest => typeof digest === 'string') ? [...ked.n] : [];
+        nextThreshold = parseSigningThreshold(ked.nt, nextDigests.length, { allowZero: true });
+        if (!keys.length) eventErrors.push('NO_CURRENT_KEYS');
+        if (new Set(keys).size !== keys.length) eventErrors.push('DUPLICATE_CURRENT_KEY');
+        if (new Set(nextDigests).size !== nextDigests.length) eventErrors.push('DUPLICATE_NEXT_KEY_COMMITMENT');
+        if (currentThreshold === null) eventErrors.push('INVALID_CURRENT_THRESHOLD');
+        if (nextThreshold === null) eventErrors.push('INVALID_NEXT_THRESHOLD');
+      } else if (ked.t === 'rot') {
+        info.rotations = (info.rotations || 0) + 1;
+        const newKeys = Array.isArray(ked.k) && ked.k.every(key => typeof key === 'string') ? [...ked.k] : [];
+        const newThreshold = parseSigningThreshold(ked.kt, newKeys.length);
+        const commitmentsMatch = nextDigests.length === newKeys.length
+          && nextDigests.length > 0
+          && nextDigests.every((digest, keyIndex) => blake3Digest(encoder.encode(newKeys[keyIndex])) === digest)
+          && nextThreshold !== null
+          && newThreshold === nextThreshold;
+        info.preRotation = (info.preRotation ?? true) && commitmentsMatch;
+        if (!commitmentsMatch) eventErrors.push('PRE_ROTATION_COMMITMENT_VIOLATED');
+        if (!newKeys.length) eventErrors.push('NO_ROTATED_KEYS');
+        if (new Set(newKeys).size !== newKeys.length) eventErrors.push('DUPLICATE_CURRENT_KEY');
+        if (newThreshold === null) eventErrors.push('INVALID_CURRENT_THRESHOLD');
+        keys = newKeys;
+        currentThreshold = newThreshold;
+        nextDigests = Array.isArray(ked.n) && ked.n.every(digest => typeof digest === 'string') ? [...ked.n] : [];
+        nextThreshold = parseSigningThreshold(ked.nt, nextDigests.length, { allowZero: true });
+        if (new Set(nextDigests).size !== nextDigests.length) eventErrors.push('DUPLICATE_NEXT_KEY_COMMITMENT');
+        if (nextThreshold === null) eventErrors.push('INVALID_NEXT_THRESHOLD');
+      } else if (ked.t === 'ixn') {
+        if (!keys.length || currentThreshold === null) eventErrors.push('NO_ESTABLISHED_KEY_STATE');
+      }
+
+      const saidOkForEvent = verifySaid(ked, saidLabelsFor(ked)).ok;
+      if (!saidOkForEvent) eventErrors.push('EVENT_SAID_INVALID');
+      const eventStructuralOk = eventErrors.length === 0;
+      if (!eventStructuralOk) structuralErrors.push(...eventErrors.map(error => `${ked.s}:${error}`));
+      chainHealthy &&= eventStructuralOk;
+
+      if (verifySignatures) {
+        const raw = saidify(ked, saidLabelsFor(ked)).raw;
+        const results = await Promise.all((message.sigs || []).map(async sigQb64 => {
+          let signature;
+          try { signature = decodeIndexedSig(sigQb64); } catch { return { ok: false, reason: 'MALFORMED_SIGNATURE' }; }
+          const key = keys[signature.index];
+          return key ? { index: signature.index, ...(await verifyEd25519(key, sigQb64, raw)) } : { index: signature.index, ok: false, reason: 'SIGNATURE_INDEX_OUT_OF_RANGE' };
+        }));
+        const decodedIndexes = results.filter(result => Number.isInteger(result.index)).map(result => result.index);
+        const duplicateIndexes = message.duplicateSignatureIndexes || new Set(decodedIndexes).size !== decodedIndexes.length;
+        const validIndexes = new Set(results.filter(result => result.ok).map(result => result.index));
+        const valid = validIndexes.size;
+        const unsupported = results.find(result => result.reason === 'ED25519_UNSUPPORTED_IN_RUNTIME' || result.reason === 'WEBCRYPTO_UNAVAILABLE');
+        const ok = eventStructuralOk
+          && !duplicateIndexes
+          && currentThreshold !== null
+          && results.length > 0
+          && valid >= currentThreshold;
+        const reason = !eventStructuralOk ? eventErrors[0]
+          : duplicateIndexes ? 'DUPLICATE_SIGNATURE_INDEX'
+            : currentThreshold === null ? 'INVALID_CURRENT_THRESHOLD'
+              : results.length === 0 ? 'NO_CONTROLLER_SIGNATURE'
+                : unsupported ? unsupported.reason
+                  : ok ? 'SIGNATURE_VALID'
+                    : `THRESHOLD_NOT_MET · ${valid}/${currentThreshold}`;
+        info.sigs.push({ t: ked.t, s: ked.s, d: ked.d, ok, threshold: currentThreshold, valid, provided: results.length, reason });
+      }
+      if (ked.t === 'ixn' && eventStructuralOk) for (const seal of Array.isArray(ked.a) ? ked.a : []) candidateAnchors.push({ seq: ked.s, seal });
+      prior = { ked, sequence };
+    }
+    info.kelValid = structuralErrors.length === 0 && info.icpSaidOk;
+    info.kelErrors = [...new Set(structuralErrors)];
+    if (info.kelValid && (!verifySignatures || info.sigs.every(signature => signature.ok))) info.anchors = candidateAnchors;
     report.aids[aid] = info;
   }
   const aidList = Object.values(report.aids);
   push('aid', aidList.every(a => a.icpSaidOk), `AID 自我認證 · ${aidList.filter(a => a.icpSaidOk).length}/${aidList.length} inception events`, 'Prefix = SAID of the inception event (d = i), so an AID cannot be forged without rewriting its KEL.');
+  push('kel', aidList.every(a => a.kelValid), `KEL continuity · ${aidList.filter(a => a.kelValid).length}/${aidList.length} key event logs`, aidList.every(a => a.kelValid) ? 'Exactly one inception at s=0; sequence and prior-event links are continuous; rotations match every committed next-key digest and threshold.' : aidList.filter(a => !a.kelValid).map(a => `${a.aid.slice(0, 12)}… ${a.kelErrors.join(', ')}`).join(' · '));
   if (verifySignatures) {
     const sigs = aidList.flatMap(a => a.sigs), okSigs = sigs.filter(s => s.ok).length, unsupported = sigs.find(s => s.reason === 'ED25519_UNSUPPORTED_IN_RUNTIME' || s.reason === 'WEBCRYPTO_UNAVAILABLE');
     const rotated = aidList.filter(a => a.rotations).length;
     report.signaturesUnverifiable = !!unsupported;
-    push('sig', sigs.length > 0 && okSigs === sigs.length, unsupported ? 'Ed25519 KEL 簽章 · 此瀏覽器不支援 WebCrypto Ed25519（未驗證，非簽章錯誤）' : `Ed25519 KEL 簽章 · ${okSigs}/${sigs.length} events meet their signing threshold (kt)${rotated ? ` · ${rotated} AID rotated (pre-rotation ${aidList.every(a => !a.rotations || a.preRotation) ? 'honoured' : 'VIOLATED'})` : ''}`, unsupported ? 'Chrome 137+／Safari 17+／Firefox 130+ 可在瀏覽器驗證；否則交由後端。' : 'Every controller indexed signature in the CESR attachment is verified against keys[index] established by the latest icp／rot; valid signatures must reach kt; rot.k[0] must match the prior next-key digest.');
+    push('sig', sigs.length > 0 && okSigs === sigs.length, unsupported ? 'Ed25519 KEL 簽章 · 此瀏覽器不支援 WebCrypto Ed25519（未驗證，非簽章錯誤）' : `Ed25519 KEL 簽章 · ${okSigs}/${sigs.length} events meet their inherited signing threshold (kt)${rotated ? ` · ${rotated} AID rotated (pre-rotation ${aidList.every(a => !a.rotations || a.preRotation) ? 'honoured' : 'VIOLATED'})` : ''}`, unsupported ? 'Chrome 137+／Safari 17+／Firefox 130+ 可在瀏覽器驗證；否則交由後端。' : 'Each unique signature index is verified against the active key state; interaction events inherit kt, and rotations must match the complete prior next-key commitment.');
   }
+
+  const hasKelSeal = (controllerAid, event) => !!(
+    event
+    && report.aids[controllerAid]?.anchors.some(anchor => (
+      anchor.seal.i === event.i
+      && anchor.seal.s === event.s
+      && anchor.seal.d === event.d
+    ))
+  );
 
   // 4. Registries + credential status
   for (const [ri, tel] of Object.entries(tels)) {
-    const vcp = tel.find(e => e.t === 'vcp');
-    report.registries[ri] = { ri, issuerAid: vcp?.ii, vcpSaidOk: vcp ? verifySaid(vcp, ['d', 'i']).ok : false, anchored: !!(vcp && report.aids[vcp.ii]?.anchors.some(a => a.seal.i === ri && a.seal.d === vcp.d)), events: tel.length };
+    const vcps = tel.filter(e => e.t === 'vcp'), vcp = vcps[0], errors = [];
+    const vcpSaidOk = !!vcp && verifySaid(vcp, ['d', 'i']).ok;
+    if (vcps.length !== 1) errors.push(`VCP_COUNT_${vcps.length}`);
+    if (!vcp || vcp.i !== ri || parseHexInteger(vcp.s) !== 0) errors.push('VCP_ID_OR_SEQUENCE_INVALID');
+    if (!vcpSaidOk) errors.push('VCP_SAID_INVALID');
+    if (typeof vcp?.ii !== 'string' || !vcp.ii) errors.push('VCP_CONTROLLER_MISSING');
+    const anchored = !!(vcp && hasKelSeal(vcp.ii, vcp));
+    report.registries[ri] = {
+      ri,
+      issuerAid: vcp?.ii,
+      vcpSaidOk,
+      anchored,
+      valid: errors.length === 0,
+      errors,
+      events: tel.length,
+    };
   }
+  const registryList = Object.values(report.registries);
+  push(
+    'registry-state',
+    registryList.every(registry => registry.valid),
+    `TEL registry structure · ${registryList.filter(registry => registry.valid).length}/${registryList.length}`,
+    registryList.every(registry => registry.valid)
+      ? 'Every registry has one SAID-valid vcp inception at sequence 0 with an explicit controller.'
+      : registryList.filter(registry => !registry.valid).map(registry => `${registry.ri}: ${registry.errors.join(', ')}`).join(' · '),
+  );
+
+  const registryCoverageFailures = registryList.filter(registry => {
+    const referencingCredentials = acdcs.filter(acdc => acdc.ri === registry.ri);
+    const explicitlySimulated = referencingCredentials.length > 0
+      && referencingCredentials.every(acdc => unanchoredOk.has(acdc.d));
+    return referencingCredentials.length === 0 || (!registry.anchored && !explicitlySimulated);
+  });
+  push(
+    'registry-coverage',
+    registryCoverageFailures.length === 0,
+    registryCoverageFailures.length ? `TEL registry coverage · ${registryCoverageFailures.length} rejected` : `TEL registry coverage · ${registryList.length}/${registryList.length}`,
+    registryCoverageFailures.length
+      ? 'Every supplied vcp registry must be referenced by a supplied credential and exact-KEL-anchored; only an explicit demo unanchored allow-list may simulate this.'
+      : 'Every supplied registry is consumed by the credential graph and is KEL-anchored or explicitly marked as a demo simulation.',
+  );
 
   // 5. Credentials: schema, edges, TEL status, expiry
   const bySaid = Object.fromEntries(acdcs.map(a => [a.d, a]));
@@ -433,32 +737,190 @@ export async function verifyChain(messages, options = {}) {
     const c = summarizeAcdc(acdc), checks = [];
     const schema = schemaBySaid(acdc.s), proposed = !schema && isProposedSchema(acdc.s);
     checks.push({ id: 'schema', ok: !!schema || proposed, label: schema ? `Schema SAID pinned · ${schema.key}` : proposed ? 'Schema · PROPOSED (not GLEIF)' : 'Schema SAID unknown', detail: schema ? `${schema.title} — GLEIF-IT/vLEI-schema main` : proposed ? AGENT_DELEGATION_SCHEMA.title : acdc.s });
+    if (schema) {
+      const shapeErrors = [];
+      const requiredTopLevel = new Set(['v', 'a', ...(VLEI_TOP_LEVEL_REQUIRED[schema.key] || [])]);
+      for (const key of requiredTopLevel) if (!Object.hasOwn(acdc, key)) shapeErrors.push(`missing ${key}`);
+      for (const key of ['v', 'u', 'i', 'ri', 's', 'd']) if (Object.hasOwn(acdc, key) && (typeof acdc[key] !== 'string' || !acdc[key])) shapeErrors.push(`${key} must be a non-empty string`);
+      const allowedTopLevel = new Set(schema.key === 'QVI' ? ['v', 'd', 'u', 'i', 'ri', 's', 'a', 'r'] : ['v', 'd', 'u', 'i', 'ri', 's', 'a', 'e', 'r']);
+      for (const key of Object.keys(acdc)) if (!allowedTopLevel.has(key)) shapeErrors.push(`unknown top-level field ${key}`);
+      if (!acdc.a || typeof acdc.a !== 'object' || Array.isArray(acdc.a)) {
+        shapeErrors.push('attributes are not disclosed as an object');
+      } else {
+        for (const key of schema.attributes) if (typeof acdc.a[key] !== 'string' || !acdc.a[key]) shapeErrors.push(`missing a.${key}`);
+        if (typeof acdc.a.d !== 'string' || !acdc.a.d) shapeErrors.push('missing a.d');
+        const allowedAttributes = new Set(['d', ...schema.attributes, ...(schema.key === 'ECR' ? ['u'] : []), ...(schema.key === 'QVI' ? ['gracePeriod'] : [])]);
+        for (const key of Object.keys(acdc.a)) if (!allowedAttributes.has(key)) shapeErrors.push(`unknown attribute a.${key}`);
+        if (Object.hasOwn(acdc.a, 'u') && (typeof acdc.a.u !== 'string' || !acdc.a.u)) shapeErrors.push('a.u must be a non-empty string');
+        if (Object.hasOwn(acdc.a, 'gracePeriod') && !Number.isInteger(acdc.a.gracePeriod)) shapeErrors.push('a.gracePeriod must be an integer');
+        if (typeof acdc.a.LEI === 'string' && !/^[A-Z0-9]{20}$/.test(acdc.a.LEI)) shapeErrors.push('a.LEI is not ISO 17442-shaped');
+        if (typeof acdc.a.dt === 'string' && !Number.isFinite(new Date(acdc.a.dt).getTime())) shapeErrors.push('a.dt is not a date-time');
+      }
+      const edgeNames = Object.keys(c.edges).sort();
+      const allowedEdgeNames = new Set(Object.keys(schema.edges));
+      const hasAllowedVariant = schema.edgeVariants.some(variant => variant.length === edgeNames.length && variant.every(name => edgeNames.includes(name)));
+      if (!hasAllowedVariant) shapeErrors.push(`edge shape ${edgeNames.join(',') || '(none)'} is not allowed`);
+      for (const name of edgeNames) if (!allowedEdgeNames.has(name)) shapeErrors.push(`unknown edge ${name}`);
+      if (edgeNames.length && (!isPlainObject(acdc.e) || typeof acdc.e.d !== 'string' || !acdc.e.d)) shapeErrors.push('missing e.d');
+      for (const name of edgeNames) {
+        const edge = c.edges[name], expectedOperator = schema.edgeOperators[name];
+        if (!isPlainObject(edge)) { shapeErrors.push(`edge ${name} is not an object`); continue; }
+        const allowedFields = new Set(expectedOperator === 'I2I' ? ['n', 's', 'o'] : ['n', 's']);
+        for (const key of Object.keys(edge)) if (!allowedFields.has(key)) shapeErrors.push(`unknown edge field ${name}.${key}`);
+        if (typeof edge.n !== 'string' || !edge.n) shapeErrors.push(`missing e.${name}.n`);
+        if (typeof edge.s !== 'string' || edge.s !== schema.edges[name]) shapeErrors.push(`e.${name}.s does not match the pinned schema SAID`);
+        if (expectedOperator === 'I2I' && edge.o !== 'I2I') shapeErrors.push(`e.${name}.o must be I2I`);
+        if (expectedOperator === null && Object.hasOwn(edge, 'o')) shapeErrors.push(`e.${name}.o is not allowed by this edge variant`);
+      }
+      if (Object.hasOwn(acdc, 'r')) shapeErrors.push(...validateVleiRulesBlock(acdc.r, schema.key));
+      checks.push({
+        id: 'schema-shape',
+        ok: shapeErrors.length === 0,
+        label: shapeErrors.length ? `Pinned schema invariants · ${shapeErrors.length} error(s)` : 'Pinned schema invariants · MATCH',
+        detail: shapeErrors.length ? shapeErrors.join(' · ') : `${schema.key} allow-listed fields, disclosed block SAIDs, required attributes, and exact edge variant are present.`,
+      });
+    }
     for (const [name, edge] of Object.entries(c.edges)) {
-      const target = bySaid[edge.n];
+      const target = bySaid[edge?.n];
       const requiredSchema = schema?.edges?.[name];
-      const op = edge.o || 'I2I';
-      const ok = !!target && (!requiredSchema || target.s === requiredSchema) && (!edge.s || target.s === edge.s) && (op !== 'I2I' || target.a?.i === acdc.i);
-      checks.push({ id: `edge:${name}`, ok, label: `Edge ${name} → ${target ? (schemaBySaid(target.s)?.key || 'ACDC') : 'MISSING'} · ${op}`, detail: !target ? `edge.n ${edge.n} not present in stream` : op === 'I2I' && target.a?.i !== acdc.i ? `I2I violated: issuer ${acdc.i} ≠ target issuee ${target.a?.i}` : `issuer ${acdc.i.slice(0, 16)}… is the issuee of ${edge.n.slice(0, 16)}…; schema ${target.s === (edge.s || target.s) ? 'matches edge.s' : 'DRIFT'}`, target: edge.n });
+      const expectedOperator = schema?.edgeOperators?.[name] ?? (proposed && name === 'role' ? 'I2I' : null);
+      const operatorOk = expectedOperator === 'I2I' ? edge?.o === 'I2I' : edge?.o === undefined;
+      const issuerIssueeOk = !!target && target.a?.i === acdc.i;
+      const subjectErrors = [];
+      if (target && name === 'le' && acdc.a?.LEI !== target.a?.LEI) subjectErrors.push(`LEI ${acdc.a?.LEI} ≠ legal-entity LEI ${target.a?.LEI}`);
+      if (target && name === 'auth') {
+        if (acdc.a?.i !== target.a?.AID) subjectErrors.push(`role issuee ${acdc.a?.i} ≠ authorization subject AID ${target.a?.AID}`);
+        if (acdc.a?.LEI !== target.a?.LEI) subjectErrors.push(`role LEI ${acdc.a?.LEI} ≠ authorization LEI ${target.a?.LEI}`);
+      }
+      const ok = !!target
+        && isPlainObject(edge)
+        && operatorOk
+        && (!requiredSchema || target.s === requiredSchema)
+        && typeof edge?.s === 'string'
+        && target.s === edge.s
+        && issuerIssueeOk
+        && subjectErrors.length === 0;
+      const operatorLabel = expectedOperator === 'I2I' ? 'I2I' : 'direct';
+      const detail = !target ? `edge.n ${edge?.n} not present in stream`
+        : !operatorOk ? `operator ${String(edge?.o)} is not allowed; expected ${operatorLabel}`
+          : !issuerIssueeOk ? `issuer ${acdc.i} ≠ target issuee ${target.a?.i}`
+            : subjectErrors.length ? subjectErrors.join(' · ')
+              : `issuer-to-issuee, schema SAID, subject AID, and LEI continuity checks passed where applicable.`;
+      checks.push({ id: `edge:${name}`, ok, label: `Edge ${name} → ${target ? (schemaBySaid(target.s)?.key || 'ACDC') : 'MISSING'} · ${operatorLabel}`, detail, target: edge?.n });
     }
     const tel = tels[acdc.ri] || [];
-    const iss = tel.find(e => e.t === 'iss' && e.i === acdc.d), rev = tel.find(e => (e.t === 'rev' || e.t === 'brv') && e.i === acdc.d);
+    const issuances = tel.filter(e => e.t === 'iss' && e.i === acdc.d);
+    const revocations = tel.filter(e => e.t === 'rev' && e.i === acdc.d);
+    const iss = issuances[0], rev = revocations[0];
     const registry = report.registries[acdc.ri];
+    const registryIssuerMatches = !!registry && registry.issuerAid === acdc.i;
+    checks.push({
+      id: 'registry-issuer',
+      ok: registryIssuerMatches,
+      label: registryIssuerMatches ? 'TEL registry controller = credential issuer' : 'TEL registry controller ≠ credential issuer',
+      detail: registry ? `credential i=${acdc.i} · registry vcp.ii=${registry.issuerAid}` : `No registry inception found for ${acdc.ri}`,
+    });
     const simulatedRevoked = revoked.has(acdc.d);
-    const issAnchored = !!(iss && registry && report.aids[registry.issuerAid]?.anchors.some(a => a.seal.i === acdc.d && a.seal.d === iss.d));
-    const status = simulatedRevoked || rev ? 'REVOKED' : iss ? 'ISSUED' : 'UNKNOWN';
-    checks.push({ id: 'tel', ok: status === 'ISSUED', anchored: issAnchored, label: `TEL status · ${status}${rev ? ` · rev ${rev.d.slice(0, 12)}…` : ''}`, detail: rev ? `rev event ${rev.d.slice(0, 16)}… supersedes iss in registry ${acdc.ri.slice(0, 16)}…` : iss ? `iss event ${iss.d.slice(0, 16)}… in registry ${acdc.ri.slice(0, 16)}…` : 'No iss event for this credential in the stream.' });
+    const issAnchored = !!(iss && registry && hasKelSeal(registry.issuerAid, iss));
+    const revAnchored = !!(rev && registry && hasKelSeal(registry.issuerAid, rev));
+    const telStateErrors = [];
+    if (issuances.length !== 1) telStateErrors.push(`ISS_COUNT_${issuances.length}`);
+    if (iss && (parseHexInteger(iss.s) !== 0 || iss.ri !== acdc.ri || iss.i !== acdc.d)) telStateErrors.push('ISS_STATE_INVALID');
+    if (revocations.length > 1) telStateErrors.push(`REV_COUNT_${revocations.length}`);
+    if (rev && (parseHexInteger(rev.s) !== 1 || rev.ri !== acdc.ri || rev.i !== acdc.d || rev.p !== iss?.d)) telStateErrors.push('REV_STATE_INVALID');
+    checks.push({
+      id: 'tel-state',
+      ok: telStateErrors.length === 0,
+      label: telStateErrors.length ? `TEL state machine · ${telStateErrors.length} error(s)` : 'TEL state machine · continuous',
+      detail: telStateErrors.length ? telStateErrors.join(' · ') : 'One iss event at sequence 0; an optional rev must be sequence 1 and link to iss through p.',
+    });
+    if (rev) checks.push({
+      id: 'rev-anchor',
+      ok: revAnchored,
+      anchored: revAnchored,
+      label: revAnchored ? 'Revocation seal · anchored in issuer KEL' : 'Revocation seal · NOT anchored in issuer KEL',
+      detail: revAnchored
+        ? `rev ${rev.d.slice(0, 16)}… is sealed for credential ${acdc.d.slice(0, 16)}…`
+        : 'An unanchored rev is untrusted input. It is not accepted as proof of revocation and the result fails closed.',
+    });
+    const simulatedIssuance = !rev && unanchoredOk.has(acdc.d);
+    const trustedIssuance = !!iss
+      && telStateErrors.length === 0
+      && issAnchored
+      && !!registry?.anchored;
+    const trustedRevocation = !!rev && telStateErrors.length === 0 && revAnchored && !!registry?.anchored;
+    const status = simulatedRevoked ? 'REVOKED'
+      : telStateErrors.length ? 'UNKNOWN'
+        : rev ? (trustedRevocation ? 'REVOKED' : 'UNKNOWN')
+          : trustedIssuance ? 'ISSUED'
+            : simulatedIssuance ? 'ISSUED_SIMULATED'
+              : 'UNKNOWN';
+    const telAnchored = simulatedRevoked || simulatedIssuance ? false : rev ? trustedRevocation : trustedIssuance;
+    checks.push({
+      id: 'tel',
+      ok: status === 'ISSUED' || status === 'ISSUED_SIMULATED',
+      anchored: telAnchored,
+      label: simulatedRevoked
+        ? 'TEL simulation · REVOKED'
+        : simulatedIssuance
+          ? 'TEL simulation · ISSUED_SIMULATED'
+          : `TEL supplied-stream snapshot · ${status}${trustedRevocation ? ` · rev ${rev.d.slice(0, 12)}…` : ''}`,
+      detail: simulatedRevoked
+        ? 'Revocation was injected through the explicit demo-only revoked set; it is not a live TEL assertion.'
+        : simulatedIssuance
+          ? 'Issuance is allowed only by the explicit demo unanchored allow-list; no KEL anchoring or live TEL status is claimed.'
+        : trustedRevocation
+          ? `Anchored rev ${rev.d.slice(0, 16)}… supersedes iss in the supplied registry snapshot.`
+          : rev
+            ? 'A rev event was supplied but did not establish an anchored, continuous TEL transition; current status is unknown.'
+            : trustedIssuance
+              ? `Anchored iss ${iss.d.slice(0, 16)}… is present in this supplied snapshot. No live TEL query was performed.`
+              : iss
+                ? 'An iss event was supplied but did not establish exact KEL anchoring; status is unknown.'
+                : 'No valid iss event for this credential in the supplied stream.',
+    });
     if (iss) {
-      const anchored = issAnchored && !!registry?.anchored, simulated = unanchoredOk.has(acdc.d);
-      checks.push({ id: 'anchor', ok: anchored || simulated, anchored, label: anchored ? 'KEL anchoring · iss and vcp sealed in issuer KEL (ixn)' : simulated ? 'KEL anchoring · SIMULATED (not anchored; allowed by demo policy)' : 'KEL anchoring · iss／vcp NOT sealed in any KEL in this stream', detail: anchored ? `registry ${acdc.ri.slice(0, 16)}… and iss ${iss.d.slice(0, 16)}… appear as seals in ${registry?.issuerAid?.slice(0, 16)}…'s interaction events` : simulated ? 'The holder private key is not in the fixture, so the delegation registry cannot be anchored; production wallets (KERIA／Signify) anchor it.' : 'A TEL event that is not anchored in the issuer KEL is not proof of issuance.' });
+      const terminalAnchored = rev ? revAnchored : issAnchored;
+      const anchored = terminalAnchored && !!registry?.anchored, simulated = !rev && unanchoredOk.has(acdc.d);
+      checks.push({ id: 'anchor', ok: anchored || simulated, anchored, label: anchored ? `KEL anchoring · vcp and ${rev ? 'rev' : 'iss'} sealed in issuer KEL (ixn)` : simulated ? 'KEL anchoring · SIMULATED (not anchored; allowed by demo policy)' : `KEL anchoring · ${rev ? 'rev' : 'iss'}／vcp NOT sealed in any KEL in this stream`, detail: anchored ? `registry ${acdc.ri.slice(0, 16)}… and terminal TEL event appear as seals in ${registry?.issuerAid?.slice(0, 16)}…'s interaction events` : simulated ? 'The holder private key is not in the fixture, so the demo-only delegation registry cannot be anchored.' : 'An unanchored TEL event is not proof of issuance or revocation.' });
     }
     if (acdc.a?.expires !== undefined) {
       const expiresAt = new Date(acdc.a.expires).getTime();
       const expired = !Number.isFinite(expiresAt) || expiresAt <= now.getTime();
       checks.push({ id: 'expiry', ok: !expired, label: !Number.isFinite(expiresAt) ? 'Expiry · unparseable a.expires (treated as expired)' : expired ? 'Expired · mandate TTL elapsed' : `Expires ${acdc.a.expires}`, detail: `ttlMinutes=${acdc.a.ttlMinutes} · short-lived single-purpose mandate · evaluated at ${now.toISOString()}` });
     }
-    c.checks = checks; c.status = status; c.valid = checks.every(x => x.ok);
+    c.checks = checks;
+    c.status = status;
+    c.statusScope = simulatedRevoked || simulatedIssuance ? 'DEMO_SIMULATION_ONLY' : 'SUPPLIED_STREAM_SNAPSHOT_ONLY';
+    c.valid = checks.every(x => x.ok);
     report.credentials.push(c);
   }
+
+  const credentialSaids = new Set(acdcs.map(acdc => acdc.d));
+  const unconsumedTelEvents = Object.values(tels).flat().filter(event => (
+    event.t !== 'vcp' && !credentialSaids.has(event.i)
+  ));
+  push(
+    'tel-coverage',
+    unconsumedTelEvents.length === 0,
+    unconsumedTelEvents.length ? `Unconsumed TEL events · ${unconsumedTelEvents.length}` : 'TEL event coverage · complete',
+    unconsumedTelEvents.length
+      ? 'Every supplied TEL status event must refer to a credential included in the same bounded stream.'
+      : 'Every supplied iss/rev event was evaluated against its credential.',
+  );
+
+  const credentialAids = new Set(report.credentials.flatMap(credential => (
+    [credential.issuer, credential.issuee].filter(aid => typeof aid === 'string' && aid.length > 0)
+  )));
+  const unconsumedAids = Object.keys(report.aids).filter(aid => !credentialAids.has(aid));
+  push(
+    'aid-coverage',
+    unconsumedAids.length === 0,
+    unconsumedAids.length ? `Unconsumed AID key logs · ${unconsumedAids.length}` : `AID key-log coverage · ${Object.keys(report.aids).length}/${Object.keys(report.aids).length}`,
+    unconsumedAids.length
+      ? 'Every supplied KEL must control an issuer or issuee represented in the supplied credential graph.'
+      : 'Every supplied KEL belongs to an issuer or issuee in the credential graph.',
+  );
 
   // 6. Root of trust + upstream validity propagation (walk from leaf to root)
   const credBySaid = Object.fromEntries(report.credentials.map(c => [c.said, c]));
@@ -470,24 +932,66 @@ export async function verifyChain(messages, options = {}) {
     return edges.every(e => chainValid(credBySaid[e.n], [...trail, c.said]));
   };
   for (const c of report.credentials) c.chainValid = chainValid(c);
-  const rootCred = report.credentials.find(c => !Object.keys(c.edges).length);
-  push('root', !!rootCred && (!rootAid || rootCred.issuer === rootAid), rootAid ? `Root of trust · ${rootCred?.issuer === rootAid ? 'issuer of QVI credential = configured root AID' : 'ROOT MISMATCH'}` : 'Root of trust · not enforced in browser', rootCred ? `QVI credential issued by ${rootCred.issuer}` : 'No root credential found', 'POLICY');
+  const rootCredentials = report.credentials.filter(c => !Object.keys(c.edges).length), rootCred = rootCredentials[0];
+  push('root', rootCredentials.length === 1 && !!rootCred && (!rootAid || rootCred.issuer === rootAid), rootAid ? `Root of trust · ${rootCredentials.length === 1 && rootCred?.issuer === rootAid ? 'issuer of QVI credential = configured root AID' : 'ROOT MISMATCH'}` : 'Root of trust · not enforced in browser', rootCred ? `QVI credential issued by ${rootCred.issuer}` : 'No root credential found', 'POLICY');
 
-  const leaf = leafSaid ? credBySaid[leafSaid] || null : report.credentials[report.credentials.length - 1] || null;
+  const referencedSaids = new Set(report.credentials.flatMap(c => Object.values(c.edges).map(edge => edge?.n).filter(Boolean)));
+  const inferredLeaves = report.credentials.filter(c => !referencedSaids.has(c.said));
+  const leaf = leafSaid ? credBySaid[leafSaid] || null : inferredLeaves.length === 1 ? inferredLeaves[0] : null;
+  const reachable = new Set(), reachableOrder = [];
+  const visit = credential => {
+    if (!credential || reachable.has(credential.said)) return;
+    reachable.add(credential.said); reachableOrder.push(credential);
+    for (const edge of Object.values(credential.edges)) visit(credBySaid[edge?.n]);
+  };
+  visit(leaf);
+  const graphErrors = [];
+  if (inferredLeaves.length !== 1) graphErrors.push(`LEAF_COUNT_${inferredLeaves.length}`);
+  if (leafSaid && leaf?.said !== inferredLeaves[0]?.said) graphErrors.push('REQUESTED_LEAF_IS_NOT_UNIQUE_TERMINAL');
+  if (leaf && reachable.size !== report.credentials.length) graphErrors.push(`UNREACHABLE_CREDENTIALS_${report.credentials.length - reachable.size}`);
+  push(
+    'credential-graph',
+    graphErrors.length === 0,
+    graphErrors.length ? `Credential graph · ${graphErrors.length} error(s)` : 'Credential graph · one connected terminal chain',
+    graphErrors.length ? graphErrors.join(' · ') : `All ${report.credentials.length} credentials are reachable from the unique terminal credential.`,
+    'POLICY',
+  );
+  const invalidCredentials = report.credentials.filter(c => !c.valid || !c.chainValid);
+  push(
+    'credential-set',
+    invalidCredentials.length === 0,
+    invalidCredentials.length ? `Credential set · ${invalidCredentials.length} invalid` : `Credential set · ${report.credentials.length}/${report.credentials.length} valid`,
+    invalidCredentials.length ? 'Every supplied credential must be valid and belong to the verified chain; invalid extras cannot be ignored.' : 'No failed credential was hidden outside the selected leaf path.',
+    'POLICY',
+  );
+
   const failing = leaf ? [leaf, ...report.credentials].flatMap(c => c.checks.filter(x => !x.ok).map(x => ({ cred: c.schemaKey, ...x }))) : [];
-  const brokenUpstream = leaf && !leaf.chainValid ? report.credentials.find(c => !c.valid) : null;
+  const brokenUpstream = leaf && !leaf.chainValid ? reachableOrder.find(c => !c.valid) : null;
   const failed = id => report.checks.some(x => !x.ok && x.id === id);
-  const code = !leaf ? (leafSaid ? 'DENY_NO_DELEGATION' : 'DENY_NO_CREDENTIAL')
-    : failed('parse') ? 'DENY_STREAM_CORRUPT'
+  const saidFailed = report.checks.some(x => !x.ok && (x.id === 'said' || x.id === 'nested' || x.id.startsWith('said:')));
+  const code = failed('parse') ? 'DENY_STREAM_CORRUPT'
+    : failed('duplicate-event') ? 'DENY_DUPLICATE_EVENT_CONFLICT'
+    : saidFailed ? 'DENY_SAID_MISMATCH'
+    : failed('message-type') ? 'DENY_UNSUPPORTED_EVENT_TYPE'
+    : failed('kel') || failed('aid') ? 'DENY_KEL_INVALID'
+    : verifySignatures && aidList.length > 0 && failed('sig') ? (report.signaturesUnverifiable ? 'DENY_SIGNATURE_UNVERIFIABLE' : 'DENY_SIGNATURE_INVALID')
+    : !leaf ? (leafSaid ? 'DENY_NO_DELEGATION' : report.credentials.length ? 'DENY_CREDENTIAL_GRAPH_INVALID' : 'DENY_NO_CREDENTIAL')
+    : failed('credential-graph') ? 'DENY_CREDENTIAL_GRAPH_INVALID'
     : leaf.chainValid && report.checks.every(x => x.ok) ? 'ALLOW_CHAIN_VERIFIED'
-    : report.checks.some(x => !x.ok && (x.id === 'said' || x.id === 'nested' || x.id.startsWith('said:'))) ? 'DENY_SAID_MISMATCH'
     : failed('root') ? 'DENY_ROOT_MISMATCH'
-    : failed('sig') ? (report.signaturesUnverifiable ? 'DENY_SIGNATURE_UNVERIFIABLE' : 'DENY_SIGNATURE_INVALID')
+    : failing.some(f => f.id === 'rev-anchor') ? 'DENY_TEL_EVENT_UNANCHORED'
+    : failing.some(f => f.id === 'tel-state') || failed('registry-state') ? 'DENY_TEL_STATE_INVALID'
+    : failed('tel-coverage') ? 'DENY_UNCONSUMED_TEL_EVENT'
+    : failing.some(f => f.id === 'registry-issuer') ? 'DENY_REGISTRY_ISSUER_MISMATCH'
+    : failing.some(f => f.id === 'schema-shape') ? 'DENY_SCHEMA_CONFORMANCE'
     : brokenUpstream && brokenUpstream.said !== leaf.said ? `DENY_UPSTREAM_${brokenUpstream.schemaKey}_${brokenUpstream.status === 'REVOKED' ? 'REVOKED' : 'INVALID'}`
     : failing[0]?.id === 'expiry' ? 'DENY_MANDATE_EXPIRED'
-    : failing[0]?.id === 'tel' ? 'DENY_CREDENTIAL_REVOKED'
+    : leaf.status === 'REVOKED' && failing.some(f => f.id === 'tel') ? 'DENY_CREDENTIAL_REVOKED'
     : failing.some(f => f.id === 'anchor') ? 'DENY_TEL_NOT_ANCHORED'
     : failing.some(f => f.id.startsWith('edge')) ? 'DENY_CHAIN_BROKEN'
+    : failed('registry-coverage') ? 'DENY_REGISTRY_COVERAGE_INVALID'
+    : failed('aid-coverage') ? 'DENY_UNCONSUMED_AID'
+    : failed('credential-set') ? 'DENY_CREDENTIAL_SET_INVALID'
     : 'DENY_VERIFICATION_FAILED';
   report.decision = { code, leaf: leaf?.said || null, tool_execution: false };
   report.decision.tool_execution = report.decision.code.startsWith('ALLOW');

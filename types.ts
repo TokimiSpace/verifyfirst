@@ -327,6 +327,23 @@ export interface TrustTimelineEvent {
   evidenceId: string;
 }
 
+// Browser-side enterprise verification summaries. Raw credentials are kept
+// in memory only and are deliberately excluded from the persisted workspace.
+export type EnterpriseVerificationKind = 'LEI_LOOKUP' | 'VLEI_CHAIN';
+
+export interface EnterpriseVerificationRecord {
+  id: string;
+  kind: EnterpriseVerificationKind;
+  source: string;
+  trustDomain: 'GLEIF_GOLDEN_COPY' | 'GLEIF_PRODUCTION' | 'GLEIF_TEST_FIXTURE';
+  subject: string;
+  decision: string;
+  checkedAt: string;
+  digest: string;
+  limitations: string[];
+  metadata: Record<string, string | number | boolean>;
+}
+
 // ========== Credential exposure incident response ==========
 
 export type CredentialIncidentSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM';

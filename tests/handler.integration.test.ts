@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { head as mockBlobHead, list as mockBlobList, put as mockBlobPut } from '@vercel/blob';
 
 // Mock @google/genai BEFORE importing the handler, so the handler picks up the mock.
 const mockGenerateContent = vi.fn();
@@ -22,39 +21,16 @@ vi.mock('node:dns/promises', () => ({
   lookup: vi.fn().mockRejectedValue(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' })),
 }));
 
-// Mock @vercel/blob so tests run without network/auth.
-vi.mock('@vercel/blob', () => ({
-  BlobNotFoundError: class BlobNotFoundError extends Error {
-    constructor() {
-      super('not found');
-      this.name = 'BlobNotFoundError';
-    }
-  },
-  head: vi.fn().mockRejectedValue(Object.assign(new Error('not found'), { name: 'BlobNotFoundError' })),
-  list: vi.fn().mockResolvedValue({ blobs: [] }),
-  put: vi.fn().mockResolvedValue(undefined),
-}));
-
 // Mock global fetch so we don't hit RDAP/DNS/VT/Cofacts during tests.
 // Each call returns a benign "empty" response so fact-gathering produces no data.
 beforeEach(() => {
   mockGenerateContent.mockReset();
   mockIffVerify.mockReset();
-  vi.mocked(mockBlobHead).mockClear();
-  vi.mocked(mockBlobList).mockClear();
-  vi.mocked(mockBlobPut).mockClear();
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
     new Response(JSON.stringify({}), { status: 200 })
   ));
   process.env.GEMINI_API_KEY = 'test-key';
-  process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_teststore_testsecret';
-  delete process.env.BLOB_PUBLIC_BASE_URL;
   delete process.env.GOOGLE_SHEETS_WEBHOOK_URL;
-  delete process.env.ML_DATA_BLOB_ENABLED;
-  delete process.env.ML_DATA_SAMPLE_RATE;
-  delete process.env.RATE_LIMIT_BACKEND;
-  delete process.env.BLOB_CACHE_ENABLED;
-  delete process.env.BLOB_CACHE_MIN_HITS;
   delete process.env.MEMORY_CACHE_MAX_ENTRIES;
 });
 
@@ -270,7 +246,7 @@ describe('POST /api/analyze — happy-path degradation', () => {
     expect(res.jsonBody.degradation).toMatchObject({ level: 'L0', score: 0, services: [] });
   });
 
-  it('keeps one-off analyses in memory and promotes only on the second hit', async () => {
+  it('keeps repeated analyses in memory without a second AI call', async () => {
     const { default: handler } = await import('../api/analyze');
 
     mockGenerateContent.mockResolvedValueOnce({
@@ -284,9 +260,6 @@ describe('POST /api/analyze — happy-path degradation', () => {
       firstRes
     );
 
-    expect(mockBlobHead).toHaveBeenCalledTimes(1);
-    expect(mockBlobList).not.toHaveBeenCalled();
-    expect(mockBlobPut).not.toHaveBeenCalled();
     expect(firstRes.jsonBody.source).toBe('api');
     expect(firstRes.headers['X-VerifyFirst-Cache']).toBe('MISS; stored=memory; hits=1');
 
@@ -297,56 +270,50 @@ describe('POST /api/analyze — happy-path degradation', () => {
     );
 
     expect(mockGenerateContent).toHaveBeenCalledTimes(1);
-    expect(mockBlobHead).toHaveBeenCalledTimes(1);
-    expect(mockBlobList).not.toHaveBeenCalled();
-    expect(mockBlobPut).toHaveBeenCalledTimes(1);
-    // sha256-based cache key: cache/<type>-<24 hex chars>-<lang>.json
-    expect(vi.mocked(mockBlobPut).mock.calls[0]?.[0]).toMatch(/^cache\/smstext-[0-9a-f]{24}-en\.json$/);
-    expect(vi.mocked(mockBlobPut).mock.calls.some(call => String(call[0]).startsWith('ml-data/'))).toBe(false);
     expect(secondRes.jsonBody).toMatchObject({ source: 'cache', cacheTier: 'memory' });
     expect(secondRes.headers['X-VerifyFirst-Cache']).toBe('HIT; tier=memory');
   });
 
-  it('can restore first-hit Blob persistence with BLOB_CACHE_MIN_HITS=1', async () => {
-    process.env.BLOB_CACHE_MIN_HITS = '1';
+  it('forceRefresh replaces a memory entry without external persistence', async () => {
     const { default: handler } = await import('../api/analyze');
-    mockGenerateContent.mockResolvedValueOnce({
-      text: JSON.stringify({ ts: 80, sp: 20, v: 'test verdict', cn: 'safe', b: 'bio', d: 'name' }),
-      candidates: [{ groundingMetadata: { groundingChunks: [], webSearchQueries: [] } }],
-    });
+    mockGenerateContent
+      .mockResolvedValueOnce({
+        text: JSON.stringify({ ts: 70, sp: 30, v: 'initial result', cn: 'check', b: 'bio', d: 'name' }),
+        candidates: [{ groundingMetadata: { groundingChunks: [], webSearchQueries: [] } }],
+      })
+      .mockResolvedValueOnce({
+        text: JSON.stringify({ ts: 80, sp: 20, v: 'fresh result', cn: 'safe', b: 'bio', d: 'name' }),
+        candidates: [{ groundingMetadata: { groundingChunks: [], webSearchQueries: [] } }],
+      });
 
-    const res = makeRes();
+    const firstRes = makeRes();
     await handler(
-      makeReq({ input: 'first hit persistence override', inputType: 'SMS_TEXT', language: 'en' }, '198.51.100.77'),
-      res
+      makeReq({ input: 'refresh this memory entry', inputType: 'SMS_TEXT', language: 'en' }, '198.51.100.78'),
+      firstRes
     );
 
-    expect(res.statusCode).toBe(200);
-    expect(mockBlobPut).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not let first-time forceRefresh requests bypass Blob admission', async () => {
-    const { default: handler } = await import('../api/analyze');
-    mockGenerateContent.mockResolvedValueOnce({
-      text: JSON.stringify({ ts: 80, sp: 20, v: 'fresh result', cn: 'safe', b: 'bio', d: 'name' }),
-      candidates: [{ groundingMetadata: { groundingChunks: [], webSearchQueries: [] } }],
-    });
-
-    const res = makeRes();
+    const refreshRes = makeRes();
     await handler(
       makeReq({
-        input: 'first time forced analysis',
+        input: 'refresh this memory entry',
         inputType: 'SMS_TEXT',
         language: 'en',
         forceRefresh: true,
       }, '198.51.100.78'),
-      res
+      refreshRes
     );
 
-    expect(res.statusCode).toBe(200);
-    expect(mockBlobHead).toHaveBeenCalledTimes(1);
-    expect(mockBlobPut).not.toHaveBeenCalled();
-    expect(res.headers['X-VerifyFirst-Cache']).toBe('MISS; stored=memory; hits=1');
+    const cachedRes = makeRes();
+    await handler(
+      makeReq({ input: 'refresh this memory entry', inputType: 'SMS_TEXT', language: 'en' }, '198.51.100.78'),
+      cachedRes
+    );
+
+    expect(refreshRes.statusCode).toBe(200);
+    expect(refreshRes.headers['X-VerifyFirst-Cache']).toBe('MISS; stored=memory; hits=1');
+    expect(mockGenerateContent).toHaveBeenCalledTimes(2);
+    expect(cachedRes.jsonBody).toMatchObject({ source: 'cache', cacheTier: 'memory' });
+    expect(cachedRes.jsonBody.verdict).toBe(refreshRes.jsonBody.verdict);
   });
 });
 

@@ -22,6 +22,7 @@ import {
   cesrEncode,
   encodeIndexedSig,
   parseCesrStream,
+  schemaBySaid,
   saidLabelsFor,
   saidify,
   verifyChain,
@@ -34,6 +35,18 @@ const fixtureText = fs.readFileSync(path.resolve('public/update-trust/credential
 const fixture = parseCesrStream(fixtureText);
 const keds = fixture.map(m => m.ked);
 const hex = (bytes: Uint8Array) => [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+const publicQb64 = async (key: CryptoKey) => cesrEncode('D', new Uint8Array(await crypto.subtle.exportKey('raw', key)));
+const signEvent = async (key: CryptoKey, ked: Record<string, unknown>, index = 0) => encodeIndexedSig(
+  new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, key, saidify(ked, saidLabelsFor(ked)).raw)),
+  index,
+);
+
+const buildMultisigInception = (currentKeys: string[], nextKeys: string[], threshold = currentKeys.length) => saidify({
+  v: 'KERI10JSON000000_', t: 'icp', d: '#'.repeat(44), i: '#'.repeat(44), s: '0',
+  kt: threshold.toString(16), k: currentKeys, nt: nextKeys.length.toString(16),
+  n: nextKeys.map(key => blake3Digest(new TextEncoder().encode(key))),
+  bt: '0', b: [], c: [], a: [],
+}, ['d', 'i']).obj;
 
 // Official BLAKE3 test vectors (input byte i = i mod 251), first 32 bytes of the extended output.
 // Source: https://github.com/BLAKE3-team/BLAKE3/blob/master/test_vectors/test_vectors.json
@@ -102,6 +115,19 @@ describe('said.js · BLAKE3 + CESR + SAID primitives', () => {
     }
   });
 
+  it('requires every self-addressed label to equal the computed SAID', () => {
+    const icp = fixture[0].ked;
+    const foreignAid = `F${icp.i.slice(1)}`;
+    const forged = { ...icp, i: foreignAid };
+    const result = verifySaid(forged, ['d', 'i']);
+    expect(result.ok).toBe(false);
+    expect(result.computed).toBe(icp.d);
+    expect(result.mismatchedLabels).toContain('i');
+
+    const vcp = keds.find(ked => ked.t === 'vcp')!;
+    expect(verifySaid({ ...vcp, i: foreignAid }, ['d', 'i']).ok).toBe(false);
+  });
+
   it('pins the fixture ACDCs to the official GLEIF-IT/vLEI-schema SAIDs', () => {
     const acdcs = keds.filter(k => k.v.startsWith('ACDC'));
     expect(acdcs.map(a => a.s)).toEqual([
@@ -142,6 +168,145 @@ describe('said.js · BLAKE3 + CESR + SAID primitives', () => {
     expect(bad.checks.find(c => c.id === 'sig')?.ok).toBe(false);
   });
 
+  it('inherits kt across ixn events and never counts a signature index twice', async () => {
+    const current = await Promise.all([
+      crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']),
+      crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']),
+    ]);
+    const next = await Promise.all([
+      crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']),
+      crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']),
+    ]);
+    const icp = buildMultisigInception(
+      await Promise.all(current.map(key => publicQb64(key.publicKey))),
+      await Promise.all(next.map(key => publicQb64(key.publicKey))),
+      2,
+    );
+    const sig0 = await signEvent(current[0].privateKey, icp, 0);
+    const sig1 = await signEvent(current[1].privateKey, icp, 1);
+    const duplicate = await verifyChain([asMessage(icp, [sig0, sig0])], {});
+    expect(duplicate.aids[icp.i].sigs[0]).toMatchObject({ ok: false, valid: 1, reason: 'DUPLICATE_SIGNATURE_INDEX' });
+
+    const ixn = saidify({
+      v: 'KERI10JSON000000_', t: 'ixn', d: '#'.repeat(44), i: icp.i,
+      s: '1', p: icp.d, a: [],
+    }).obj;
+    const inherited = await verifyChain([
+      asMessage(icp, [sig0, sig1]),
+      asMessage(ixn, [await signEvent(current[0].privateKey, ixn, 0)]),
+    ], {});
+    expect(inherited.aids[icp.i].sigs[1]).toMatchObject({ ok: false, threshold: 2, valid: 1 });
+    expect(inherited.decision.code).toBe('DENY_SIGNATURE_INVALID');
+  });
+
+  it('rejects duplicate current keys and duplicate next-key commitments', async () => {
+    const current = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    const next = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    const currentPublic = await publicQb64(current.publicKey), nextPublic = await publicQb64(next.publicKey);
+    const duplicateKeys = buildMultisigInception([currentPublic, currentPublic], [nextPublic], 2);
+    const rawSignature = new Uint8Array(await crypto.subtle.sign(
+      { name: 'Ed25519' },
+      current.privateKey,
+      saidify(duplicateKeys, ['d', 'i']).raw,
+    ));
+    const duplicateKeyReport = await verifyChain([
+      asMessage(duplicateKeys, [encodeIndexedSig(rawSignature, 0), encodeIndexedSig(rawSignature, 1)]),
+    ], {});
+    expect(duplicateKeyReport.checks.find(check => check.id === 'kel')?.ok).toBe(false);
+    expect(duplicateKeyReport.decision.code).toBe('DENY_KEL_INVALID');
+
+    const duplicateNext = buildMultisigInception([currentPublic], [nextPublic, nextPublic], 1);
+    const duplicateNextReport = await verifyChain([asMessage(duplicateNext)], { verifySignatures: false });
+    expect(duplicateNextReport.checks.find(check => check.id === 'kel')?.ok).toBe(false);
+    expect(duplicateNextReport.aids[duplicateNext.i].kelErrors.join(' ')).toContain('DUPLICATE_NEXT_KEY_COMMITMENT');
+  });
+
+  it('fails closed on unsupported weighted thresholds and inconsistent nt/n state', async () => {
+    const current = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    const next = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    const currentPublic = await publicQb64(current.publicKey), nextPublic = await publicQb64(next.publicKey);
+    const base = buildInception(currentPublic, nextPublic);
+    for (const kt of [[null], [], [['1/2']], ['1/2']]) {
+      const malformed = saidify({ ...base, d: '#'.repeat(44), i: '#'.repeat(44), kt }, ['d', 'i']).obj;
+      const report = await verifyChain([asMessage(malformed)], { verifySignatures: false });
+      expect(report.checks.find(check => check.id === 'kel')?.ok).toBe(false);
+      expect(report.decision.code).toBe('DENY_KEL_INVALID');
+    }
+
+    const zeroNextThreshold = saidify({ ...base, d: '#'.repeat(44), i: '#'.repeat(44), nt: '0' }, ['d', 'i']).obj;
+    const zeroNextReport = await verifyChain([asMessage(zeroNextThreshold)], { verifySignatures: false });
+    expect(zeroNextReport.checks.find(check => check.id === 'kel')?.ok).toBe(false);
+
+    const later = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    const rotation = saidify({
+      v: 'KERI10JSON000000_', t: 'rot', d: '#'.repeat(44), i: base.i, s: '1', p: base.d,
+      kt: '1', k: [nextPublic], nt: '0', n: [blake3Digest(new TextEncoder().encode(await publicQb64(later.publicKey)))],
+      bt: '0', br: [], ba: [], a: [],
+    }).obj;
+    const rotationReport = await verifyChain([asMessage(base), asMessage(rotation)], { verifySignatures: false });
+    expect(rotationReport.checks.find(check => check.id === 'kel')?.ok).toBe(false);
+    expect(rotationReport.aids[base.i].kelErrors.join(' ')).toContain('INVALID_NEXT_THRESHOLD');
+  });
+
+  it('rejects KEL gaps, wrong prior links, sequence forks, and stale post-rotation keys', async () => {
+    const k1 = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    const k2 = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    const k3 = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    const p1 = await publicQb64(k1.publicKey), p2 = await publicQb64(k2.publicKey), p3 = await publicQb64(k3.publicKey);
+    const icp = buildInception(p1, p2);
+    const validIxn = saidify({ v: 'KERI10JSON000000_', t: 'ixn', d: '#'.repeat(44), i: icp.i, s: '1', p: icp.d, a: [] }).obj;
+    const wrongPrior = saidify({ ...validIxn, d: '#'.repeat(44), p: '#'.repeat(44) }).obj;
+    const gap = saidify({ ...validIxn, d: '#'.repeat(44), s: '2' }).obj;
+    const fork = saidify({ ...validIxn, d: '#'.repeat(44), a: [{ i: '#'.repeat(44), s: '0', d: '#'.repeat(44) }] }).obj;
+    for (const events of [[icp, wrongPrior], [icp, gap], [icp, validIxn, fork]]) {
+      const report = await verifyChain(events.map(event => asMessage(event)), { verifySignatures: false });
+      expect(report.checks.find(check => check.id === 'kel')?.ok).toBe(false);
+      expect(report.decision.code).toBe('DENY_KEL_INVALID');
+    }
+
+    const rot = saidify({
+      v: 'KERI10JSON000000_', t: 'rot', d: '#'.repeat(44), i: icp.i, s: '1', p: icp.d,
+      kt: '1', k: [p2], nt: '1', n: [blake3Digest(new TextEncoder().encode(p3))],
+      bt: '0', br: [], ba: [], a: [],
+    }).obj;
+    const afterRotation = saidify({ v: 'KERI10JSON000000_', t: 'ixn', d: '#'.repeat(44), i: icp.i, s: '2', p: rot.d, a: [] }).obj;
+    const stale = await verifyChain([
+      asMessage(icp, [await signEvent(k1.privateKey, icp)]),
+      asMessage(rot, [await signEvent(k2.privateKey, rot)]),
+      asMessage(afterRotation, [await signEvent(k1.privateKey, afterRotation)]),
+    ], {});
+    expect(stale.aids[icp.i].sigs[2].ok).toBe(false);
+    expect(stale.decision.code).toBe('DENY_SIGNATURE_INVALID');
+  });
+
+  it('validates every key and threshold in a multi-key pre-rotation commitment', async () => {
+    const current = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    const next = await Promise.all([
+      crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']),
+      crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']),
+    ]);
+    const foreign = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    const pCurrent = await publicQb64(current.publicKey);
+    const nextPublic = await Promise.all(next.map(key => publicQb64(key.publicKey)));
+    const icp = buildMultisigInception([pCurrent], nextPublic, 1);
+    const makeRotation = (keys: string[], kt = '2') => saidify({
+      v: 'KERI10JSON000000_', t: 'rot', d: '#'.repeat(44), i: icp.i, s: '1', p: icp.d,
+      kt, k: keys, nt: '0', n: [], bt: '0', br: [], ba: [], a: [],
+    }).obj;
+    const valid = makeRotation(nextPublic);
+    const validReport = await verifyChain([asMessage(icp), asMessage(valid)], { verifySignatures: false });
+    expect(validReport.aids[icp.i].preRotation).toBe(true);
+
+    const changed = makeRotation([nextPublic[0], await publicQb64(foreign.publicKey)]);
+    const missing = makeRotation([nextPublic[0]], '1');
+    const wrongThreshold = makeRotation(nextPublic, '1');
+    for (const rotation of [changed, missing, wrongThreshold]) {
+      const report = await verifyChain([asMessage(icp), asMessage(rotation)], { verifySignatures: false });
+      expect(report.aids[icp.i].preRotation).toBe(false);
+      expect(report.decision.code).toBe('DENY_KEL_INVALID');
+    }
+  });
+
   it('self-addresses the proposed Agent Delegation schema', () => {
     expect(verifySaid(AGENT_DELEGATION_SCHEMA, ['$id']).ok).toBe(true);
     expect(AGENT_DELEGATION_SCHEMA.title).toContain('NOT a GLEIF vLEI schema');
@@ -161,6 +326,34 @@ describe('said.js · chain walk over the official fixture', () => {
     return { delegation, iss, registry, report: await verifyChain(messages, { rootAid: ROOT_OF_TRUST.fixture.aid, verifySignatures: false, now: new Date('2026-08-28T10:05:00.000Z'), leafSaid: delegation.d, unanchoredOk: new Set([delegation.d]), ...opts }) };
   }
 
+  function replaceTerminalEcr(
+    mutate: (credential: Record<string, any>) => Record<string, any>,
+  ) {
+    const originalIss = keds.find(ked => ked.t === 'iss' && ked.i === ecr.d)!;
+    const changed = mutate(structuredClone(ecr));
+    if (changed.a && typeof changed.a === 'object') changed.a = saidify({ ...changed.a, d: '#'.repeat(44) }).obj;
+    if (changed.e && typeof changed.e === 'object') changed.e = saidify({ ...changed.e, d: '#'.repeat(44) }).obj;
+    const credential = saidify({ ...changed, d: '#'.repeat(44) }).obj;
+    const issuance = saidify({ ...originalIss, d: '#'.repeat(44), i: credential.d }).obj;
+    const originalAnchor = keds.find(ked => ked.t === 'ixn' && ked.a?.some((seal: any) => seal.i === ecr.d && seal.d === originalIss.d))!;
+    const anchor = saidify({
+      ...originalAnchor,
+      d: '#'.repeat(44),
+      a: originalAnchor.a.map((seal: any) => seal.i === ecr.d && seal.d === originalIss.d
+        ? { ...seal, i: credential.d, d: issuance.d }
+        : seal),
+    }).obj;
+    return {
+      credential,
+      messages: fixture.map(message => {
+        if (message.ked.d === ecr.d) return asMessage(credential);
+        if (message.ked.d === originalIss.d) return asMessage(issuance);
+        if (message.ked.d === originalAnchor.d) return asMessage(anchor);
+        return message;
+      }),
+    };
+  }
+
   it('walks GLEIF → QVI → LE → ECR AUTH → ECR with I2I edges and TEL issuance', async () => {
     const report = await verifyChain(fixture, { rootAid: ROOT_OF_TRUST.fixture.aid });
     expect(report.decision.code).toBe('ALLOW_CHAIN_VERIFIED');
@@ -170,6 +363,233 @@ describe('said.js · chain walk over the official fixture', () => {
     expect(report.checks.find(c => c.id === 'sig')?.label).toContain('11/11');
     expect(report.checks.find(c => c.id === 'parse')?.ok).toBe(true);
     expect(Object.values(report.registries).every(r => r.anchored && r.vcpSaidOk)).toBe(true);
+  });
+
+  it('accepts exact transport duplicates but rejects conflicting bodies with the same type and SAID', async () => {
+    const exact = await verifyChain([...fixture, fixture[0]], { rootAid: ROOT_OF_TRUST.fixture.aid });
+    expect(exact.checks.find(check => check.id === 'duplicate-event')?.ok).toBe(true);
+    expect(exact.decision.code).toBe('ALLOW_CHAIN_VERIFIED');
+
+    const conflict = {
+      ...fixture[0],
+      ked: { ...fixture[0].ked, s: 'f' },
+    };
+    const denied = await verifyChain([...fixture, conflict], { rootAid: ROOT_OF_TRUST.fixture.aid });
+    expect(denied.checks.find(check => check.id === 'duplicate-event')?.ok).toBe(false);
+    expect(denied.decision.code).toBe('DENY_DUPLICATE_EVENT_CONFLICT');
+  });
+
+  it('fails closed instead of silently ignoring unsupported KERI or TEL event families', async () => {
+    const unsupported = saidify({
+      v: 'KERI10JSON000000_', t: 'vrt', d: '#'.repeat(44),
+      i: ecr.ri, s: '1', p: '#'.repeat(44), bt: '0', br: [], ba: [],
+    }).obj;
+    const report = await verifyChain([...fixture, asMessage(unsupported)], {
+      rootAid: ROOT_OF_TRUST.fixture.aid,
+    });
+
+    expect(report.checks).toContainEqual(expect.objectContaining({ id: 'message-type', ok: false }));
+    expect(report.decision.code).toBe('DENY_UNSUPPORTED_EVENT_TYPE');
+    expect(report.decision.tool_execution).toBe(false);
+  });
+
+  it('rejects invalid or disconnected credentials even when the intended terminal chain is valid', async () => {
+    const qvi = keds.find(ked => ked?.v?.startsWith('ACDC') && schemaBySaid(ked.s)?.key === 'QVI')!;
+    const disconnected = saidify({
+      ...structuredClone(qvi),
+      d: '#'.repeat(44),
+      ri: 'EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    }).obj;
+    const report = await verifyChain([...fixture, asMessage(disconnected)], {
+      rootAid: ROOT_OF_TRUST.fixture.aid,
+      leafSaid: ecr.d,
+    });
+
+    expect(report.checks).toContainEqual(expect.objectContaining({ id: 'credential-graph', ok: false }));
+    expect(report.checks).toContainEqual(expect.objectContaining({ id: 'credential-set', ok: false }));
+    expect(report.decision.code).toBe('DENY_CREDENTIAL_GRAPH_INVALID');
+    expect(report.decision.tool_execution).toBe(false);
+  });
+
+  it('rejects an unused or unanchored extra TEL registry instead of ignoring it', async () => {
+    const extraRegistry = buildRegistryInception(
+      ROOT_OF_TRUST.fixture.aid,
+      'EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    );
+    const report = await verifyChain([...fixture, asMessage(extraRegistry)], {
+      rootAid: ROOT_OF_TRUST.fixture.aid,
+    });
+
+    expect(report.checks).toContainEqual(expect.objectContaining({ id: 'registry-coverage', ok: false }));
+    expect(report.decision.code).toBe('DENY_REGISTRY_COVERAGE_INVALID');
+    expect(report.decision.tool_execution).toBe(false);
+  });
+
+  it('rejects an unrelated but structurally valid KEL instead of ignoring it', async () => {
+    const key = fixture[0].ked.k[0];
+    const unrelatedAid = buildInception(key, key);
+    const report = await verifyChain([...fixture, asMessage(unrelatedAid)], {
+      rootAid: ROOT_OF_TRUST.fixture.aid,
+      verifySignatures: false,
+    });
+
+    expect(report.checks).toContainEqual(expect.objectContaining({ id: 'aid-coverage', ok: false }));
+    expect(report.decision.code).toBe('DENY_UNCONSUMED_AID');
+    expect(report.decision.tool_execution).toBe(false);
+  });
+
+  it('does not treat an unanchored rev as authoritative, but accepts an exact signed-KEL seal as revoked', async () => {
+    const iss = keds.find(ked => ked.t === 'iss' && ked.i === ecr.d)!;
+    const rev = buildRevocation(ecr.d, ecr.ri, iss.d, dt);
+    const unanchored = await verifyChain([...fixture, asMessage(rev)], {
+      rootAid: ROOT_OF_TRUST.fixture.aid,
+      verifySignatures: false,
+    });
+    const unanchoredEcr = unanchored.credentials.find(credential => credential.said === ecr.d)!;
+    expect(unanchored.decision.code).toBe('DENY_TEL_EVENT_UNANCHORED');
+    expect(unanchoredEcr.status).toBe('UNKNOWN');
+    expect(unanchoredEcr.checks).toContainEqual(expect.objectContaining({ id: 'rev-anchor', ok: false, anchored: false }));
+    expect(unanchoredEcr.checks.find(check => check.id === 'tel')?.anchored).toBe(false);
+
+    const issuerKel = fixture
+      .filter(message => message.ked.i === ecr.i && ['icp', 'rot', 'ixn'].includes(message.ked.t))
+      .sort((left, right) => Number.parseInt(left.ked.s, 16) - Number.parseInt(right.ked.s, 16));
+    const prior = issuerKel.at(-1)!.ked;
+    const revAnchor = saidify({
+      v: 'KERI10JSON000000_', t: 'ixn', d: '#'.repeat(44), i: ecr.i,
+      s: (Number.parseInt(prior.s, 16) + 1).toString(16), p: prior.d,
+      a: [{ i: ecr.d, s: rev.s, d: rev.d }],
+    }).obj;
+    const anchored = await verifyChain([...fixture, asMessage(rev), asMessage(revAnchor)], {
+      rootAid: ROOT_OF_TRUST.fixture.aid,
+      verifySignatures: false,
+    });
+    const anchoredEcr = anchored.credentials.find(credential => credential.said === ecr.d)!;
+    expect(anchored.decision.code).toBe('DENY_CREDENTIAL_REVOKED');
+    expect(anchoredEcr.status).toBe('REVOKED');
+    expect(anchoredEcr.checks).toContainEqual(expect.objectContaining({ id: 'rev-anchor', ok: true, anchored: true }));
+  });
+
+  it('rejects unknown edge operators even when every affected SAID and TEL seal is refreshed', async () => {
+    const { credential, messages } = replaceTerminalEcr(value => ({
+      ...value,
+      e: { ...value.e, auth: { ...value.e.auth, o: 'UNKNOWN' } },
+    }));
+    const report = await verifyChain(messages, {
+      rootAid: ROOT_OF_TRUST.fixture.aid,
+      verifySignatures: false,
+      leafSaid: credential.d,
+    });
+    expect(report.credentials.at(-1)?.checks).toContainEqual(expect.objectContaining({ id: 'schema-shape', ok: false }));
+    expect(report.decision.code).toBe('DENY_SCHEMA_CONFORMANCE');
+  });
+
+  it('fails closed on missing required and forbidden extra fields in pinned schema invariants', async () => {
+    const mutations = [
+      (value: Record<string, any>) => {
+        const next = { ...value };
+        delete next.u;
+        return next;
+      },
+      (value: Record<string, any>) => {
+        const next = { ...value };
+        delete next.r;
+        return next;
+      },
+      (value: Record<string, any>) => {
+        const next = { ...value, a: { ...value.a } };
+        delete next.a.personLegalName;
+        return next;
+      },
+      (value: Record<string, any>) => ({ ...value, a: { ...value.a, unexpectedClaim: 'not allowed' } }),
+      (value: Record<string, any>) => ({ ...value, unexpectedTopLevel: 'not allowed' }),
+      (value: Record<string, any>) => ({
+        ...value,
+        r: {
+          ...value.r,
+          privacyDisclaimer: { l: 'This is not the pinned disclaimer constant.' },
+        },
+      }),
+    ];
+    for (const mutate of mutations) {
+      const { credential, messages } = replaceTerminalEcr(mutate);
+      const report = await verifyChain(messages, {
+        rootAid: ROOT_OF_TRUST.fixture.aid,
+        verifySignatures: false,
+        leafSaid: credential.d,
+      });
+      expect(report.credentials.at(-1)?.checks).toContainEqual(expect.objectContaining({ id: 'schema-shape', ok: false }));
+      expect(report.decision.code).toBe('DENY_SCHEMA_CONFORMANCE');
+    }
+  });
+
+  it('binds role credentials to the authorization subject AID and legal entity LEI', async () => {
+    const wrongSubject = replaceTerminalEcr(value => ({
+      ...value,
+      a: { ...value.a, i: 'EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+    }));
+    const subjectReport = await verifyChain(wrongSubject.messages, {
+      rootAid: ROOT_OF_TRUST.fixture.aid,
+      verifySignatures: false,
+      leafSaid: wrongSubject.credential.d,
+    });
+    expect(subjectReport.credentials.at(-1)?.checks).toContainEqual(expect.objectContaining({ id: 'edge:auth', ok: false }));
+    expect(subjectReport.decision.code).toBe('DENY_CHAIN_BROKEN');
+
+    const wrongLei = replaceTerminalEcr(value => ({
+      ...value,
+      a: { ...value.a, LEI: '5493001KJTIIGC8Y1R12' },
+    }));
+    const leiReport = await verifyChain(wrongLei.messages, {
+      rootAid: ROOT_OF_TRUST.fixture.aid,
+      verifySignatures: false,
+      leafSaid: wrongLei.credential.d,
+    });
+    expect(leiReport.credentials.at(-1)?.checks).toContainEqual(expect.objectContaining({ id: 'edge:auth', ok: false }));
+    expect(leiReport.decision.code).toBe('DENY_CHAIN_BROKEN');
+  });
+
+  it('binds every credential issuer to the controller of its TEL registry', async () => {
+    const key = 'DJCVOtOyP7o_v6gxPrbVHObD_X0NHjc2zhwEJtGnXDlw';
+    const attackerIcp = buildInception(key, key);
+    const registry = buildRegistryInception(attackerIcp.i, 'EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+    const attributes = saidify({
+      d: '#'.repeat(44),
+      i: attackerIcp.i,
+      dt,
+      LEI: '9845004CC7884BN85018',
+    }).obj;
+    const forgedQvi = saidify({
+      v: 'ACDC10JSON000000_',
+      d: '#'.repeat(44),
+      // The attacker claims GLEIF as issuer while using an attacker-controlled
+      // registry. SAIDs and TEL anchors alone must never make that claim valid.
+      i: ROOT_OF_TRUST.fixture.aid,
+      ri: registry.i,
+      s: VLEI_SCHEMAS.EBfdlu8R27Fbx.said,
+      a: attributes,
+    }).obj;
+    const issuance = buildIssuance(forgedQvi.d, registry.i, dt);
+    const registryAnchor = saidify({
+      v: 'KERI10JSON000000_', t: 'ixn', d: '#'.repeat(44), i: attackerIcp.i,
+      s: '1', p: attackerIcp.d, a: [{ i: registry.i, s: '0', d: registry.d }],
+    }).obj;
+    const issuanceAnchor = saidify({
+      v: 'KERI10JSON000000_', t: 'ixn', d: '#'.repeat(44), i: attackerIcp.i,
+      s: '2', p: registryAnchor.d, a: [{ i: forgedQvi.d, s: '0', d: issuance.d }],
+    }).obj;
+
+    const report = await verifyChain([
+      asMessage(attackerIcp), asMessage(registryAnchor), asMessage(issuanceAnchor),
+      asMessage(registry), asMessage(issuance), asMessage(forgedQvi),
+    ], { rootAid: ROOT_OF_TRUST.fixture.aid, verifySignatures: false });
+
+    expect(report.decision.code).toBe('DENY_REGISTRY_ISSUER_MISMATCH');
+    expect(report.decision.tool_execution).toBe(false);
+    expect(report.credentials[0].checks).toContainEqual(expect.objectContaining({
+      id: 'registry-issuer',
+      ok: false,
+    }));
   });
 
   it('allows a freshly issued delegation chained I2I to the real ECR credential', async () => {
@@ -183,19 +603,17 @@ describe('said.js · chain walk over the official fixture', () => {
 
   it('denies once the delegation itself is revoked in its TEL', async () => {
     const base = await withDelegation();
-    const rev = buildRevocation(base.delegation.d, base.registry.i, base.iss.d, '2026-08-28T10:05:00.000Z');
-    const { report } = await withDelegation([asMessage(rev)]);
+    const { report } = await withDelegation([], { revoked: new Set([base.delegation.d]) });
     expect(report.decision.code).toBe('DENY_CREDENTIAL_REVOKED');
     expect(report.decision.tool_execution).toBe(false);
+    expect(report.credentials.at(-1)?.statusScope).toBe('DEMO_SIMULATION_ONLY');
   });
 
   it('cascades upstream ECR and LE revocations down to the agent delegation', async () => {
-    const ecrIss = keds.find(k => k.t === 'iss' && k.i === ecr.d)!;
-    const ecrRevoked = await withDelegation([asMessage(buildRevocation(ecr.d, ecr.ri, ecrIss.d, dt))]);
+    const ecrRevoked = await withDelegation([], { revoked: new Set([ecr.d]) });
     expect(ecrRevoked.report.decision.code).toBe('DENY_UPSTREAM_ECR_REVOKED');
     const le = keds.find(k => k.d === 'EHRFwPbmP81ju2sOBeIXAFbfah1gd7JPfe5hEL0sZPqN')!;
-    const leIss = keds.find(k => k.t === 'iss' && k.i === le.d)!;
-    const leRevoked = await withDelegation([asMessage(buildRevocation(le.d, le.ri, leIss.d, dt))]);
+    const leRevoked = await withDelegation([], { revoked: new Set([le.d]) });
     expect(leRevoked.report.decision.code).toBe('DENY_UPSTREAM_LE_REVOKED');
   });
 
@@ -206,6 +624,10 @@ describe('said.js · chain walk over the official fixture', () => {
     const base = await withDelegation();
     const unanchored = await withDelegation([], { unanchoredOk: new Set() });
     expect(unanchored.report.decision.code).toBe('DENY_TEL_NOT_ANCHORED');
+    const unanchoredDelegation = unanchored.report.credentials.find(c => c.said === unanchored.delegation.d)!;
+    expect(unanchoredDelegation.status).toBe('UNKNOWN');
+    expect(unanchoredDelegation.checks.find(check => check.id === 'tel')).toMatchObject({ ok: false, anchored: false });
+    expect(unanchoredDelegation.checks.find(check => check.id === 'tel')?.detail).not.toContain('Anchored iss');
     expect(base.report.credentials.slice(0, 4).every(c => c.checks.find(x => x.id === 'anchor')?.anchored)).toBe(true);
 
     const corrupted = parseCesrStream(fixtureText.replace('"t": "iss"', '"t": "iss",,'));
@@ -216,7 +638,8 @@ describe('said.js · chain walk over the official fixture', () => {
     const icp = fixture[0];
     const multisig = { ...icp, ked: saidify({ ...icp.ked, kt: '2', k: [icp.ked.k[0], icp.ked.k[0]] }, ['d', 'i']).obj };
     const thresholdReport = await verifyChain([multisig], {});
-    expect(thresholdReport.aids[multisig.ked.i].sigs[0].reason).toMatch(/THRESHOLD_NOT_MET|SIGNATURE_INVALID/);
+    expect(thresholdReport.aids[multisig.ked.i].sigs[0].reason).toMatch(/THRESHOLD_NOT_MET|SIGNATURE_INVALID|DUPLICATE_CURRENT_KEY/);
+    expect(thresholdReport.checks.find(c => c.id === 'kel')?.ok).toBe(false);
     expect(thresholdReport.checks.find(c => c.id === 'sig')?.ok).toBe(false);
   });
 
@@ -273,8 +696,7 @@ describe('said.js · selective disclosure of the carbon-footprint credential', (
     const tampered = disclose({ ...vc, a: { ...vc.a, carbon: { ...vc.a.carbon, value_kgco2e: 2.4 } } }, ['product', 'carbon']);
     expect(verifyDisclosure(tampered, chain).decision).toBe('DENY_SAID_MISMATCH');
     expect(verifyDisclosure(disclose(vc, ['product']), chain).decision).toBe('DENY_REQUIRED_BLOCK_WITHHELD');
-    const leIss = keds.find(k => k.t === 'iss' && k.i === le.d)!;
-    const revokedChain = await verifyChain([...fixture, asMessage(buildRevocation(le.d, le.ri, leIss.d, '2026-08-28T10:05:00.000Z'))], { rootAid: ROOT_OF_TRUST.fixture.aid, verifySignatures: false });
+    const revokedChain = await verifyChain(fixture, { rootAid: ROOT_OF_TRUST.fixture.aid, verifySignatures: false, revoked: new Set([le.d]) });
     expect(verifyDisclosure(disclose(vc, ['product', 'carbon']), revokedChain).decision).toBe('DENY_ISSUER_CHAIN_INVALID');
     expect(verifySaid(CARBON_SCHEMA, ['$id']).ok).toBe(true);
     expect(CARBON_SCHEMA.scopeTags.process).toBe('read:process-recipe');
@@ -300,7 +722,7 @@ describe('Update Trust standalone page', () => {
   });
 
   it('exposes the full lifecycle with machine-readable deny codes', () => {
-    ['DENY_CREDENTIAL_REVOKED', 'DENY_UPSTREAM_ECR_REVOKED', 'DENY_UPSTREAM_LE_REVOKED', 'DENY_MANDATE_EXPIRED', 'DENY_SAID_MISMATCH', 'DENY_ROOT_MISMATCH', 'DENY_NO_DELEGATION', 'DENY_SIGNATURE_UNVERIFIABLE', 'DENY_TEL_NOT_ANCHORED', 'ALLOW_CHAIN_VERIFIED'].forEach(code => expect(page).toContain(code));
+    ['DENY_CREDENTIAL_REVOKED', 'DENY_UPSTREAM_ECR_REVOKED', 'DENY_UPSTREAM_LE_REVOKED', 'DENY_MANDATE_EXPIRED', 'DENY_SAID_MISMATCH', 'DENY_ROOT_MISMATCH', 'DENY_NO_DELEGATION', 'DENY_SIGNATURE_UNVERIFIABLE', 'DENY_TEL_NOT_ANCHORED', 'DENY_TEL_EVENT_UNANCHORED', 'DENY_UNSUPPORTED_EVENT_TYPE', 'DENY_CREDENTIAL_GRAPH_INVALID', 'DENY_REGISTRY_COVERAGE_INVALID', 'DENY_UNCONSUMED_AID', 'ALLOW_CHAIN_VERIFIED'].forEach(code => expect(page).toContain(code));
     expect(page).toContain('const esc = v =>');
     expect(page).toContain("s: (parseInt(prior.s, 16) + 1).toString(16)");
     ['id="revokeDelegation"', 'id="revokeEcr"', 'id="revokeLe"', 'id="expireMandate"', 'id="tamperScope"', 'id="rotateAgent"', 'id="reissue"'].forEach(id => expect(page).toContain(id));
@@ -318,6 +740,7 @@ describe('Update Trust standalone page', () => {
     expect(page).toContain('https://github.com/GLEIF-IT/vlei-trainings/tree/main/markdown');
     expect(page).toContain('https://www.gleif.org/en/newsroom/blog/why-ai-agents-need-verifiable-organizational-identity');
     expect(page).toContain('verifyfirst.update-trust-evidence.v1');
+    expect(page).toContain("tel_scope: 'SUPPLIED_STREAM_SNAPSHOT_ONLY'");
   });
 
   it('provides a replayable 60-second lifecycle tour ending fail closed', () => {

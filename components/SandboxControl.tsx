@@ -17,13 +17,14 @@ import {
   UserRound,
   X,
 } from 'lucide-react';
-import { AgentActionKind, AgentEvidencePacket, AgentGrant, Language, TrustTimelineEvent } from '../types';
+import { AgentActionKind, AgentEvidencePacket, AgentGrant, EnterpriseVerificationRecord, Language, TrustTimelineEvent } from '../types';
 
 interface SandboxControlProps {
   language: Language;
   grant: AgentGrant;
   timeline: TrustTimelineEvent[];
   evidencePackets: AgentEvidencePacket[];
+  verificationRecords: EnterpriseVerificationRecord[];
   onBack: () => void;
   onRevoke: () => void;
   onResetGrant: () => void;
@@ -49,10 +50,10 @@ const COPY = {
     revoke: '撤銷 Agent 權限', reset: '恢復安全預設', timeline: 'Trust Timeline',
     timelineBody: '每一步都有時間、Agent、工具、決策與證據雜湊。', empty: 'Agent 執行後，紀錄會出現在這裡。',
     evidence: 'VerifyFirst Evidence', evidenceBody: '每次政策結果都封裝成完整 JSON 與 SHA-256 雜湊；x402 付款要求另由 IFF 提供獨立查驗證據。',
-    verified: '最近決策', policy: '政策套件', chain: '紀錄完整性', workspace: 'LOCAL WORKSPACE',
+    verified: '最近決策', policy: '政策套件', chain: '紀錄 checksum', workspace: 'LOCAL WORKSPACE',
     edit: '編輯授權', save: '儲存政策', cancel: '取消', agentNameLabel: 'Agent 名稱', agentIdLabel: 'Agent ID',
     userLabel: '代表使用者', purposeLabel: '受託目的', targetLabel: '允許目標（逗號分隔）', expiresLabel: '有效期限',
-    rulesLabel: '每個動作的政策', export: '匯出完整稽核 JSON', packetCount: 'Evidence Packets',
+    rulesLabel: '每個動作的政策', export: '匯出完整稽核 JSON', packetCount: 'Evidence Packets', verificationCount: '組織／憑證查驗',
     ruleAllow: 'ALLOW', ruleConfirm: 'CONFIRM', ruleDeny: 'DENY',
     actionLabels: { OBSERVE_URL: '隔離觀察網址', CHECK_IDENTITY: '查驗身分', READ_PUBLIC_DATA: '讀取公開資料', SUBMIT_PERSONAL_DATA: '送出個人資料', LOGIN: '登入帳號', PAYMENT: '付款／轉帳', REQUEST_OTP: '要求 OTP', DOWNLOAD_APP: '下載應用程式' },
   },
@@ -67,10 +68,10 @@ const COPY = {
     revoke: 'Revoke Agent access', reset: 'Restore safe defaults', timeline: 'Trust Timeline',
     timelineBody: 'Every step records time, Agent, tool, decision, and evidence hash.', empty: 'Agent activity will appear here.',
     evidence: 'VerifyFirst Evidence', evidenceBody: 'Every policy result is packaged as complete JSON with a SHA-256 digest; IFF supplies independent evidence for observed x402 payment requirements.',
-    verified: 'Latest decision', policy: 'Policy bundle', chain: 'Log integrity', workspace: 'LOCAL WORKSPACE',
+    verified: 'Latest decision', policy: 'Policy bundle', chain: 'Record checksum', workspace: 'LOCAL WORKSPACE',
     edit: 'Edit authorization', save: 'Save policy', cancel: 'Cancel', agentNameLabel: 'Agent name', agentIdLabel: 'Agent ID',
     userLabel: 'Represented user', purposeLabel: 'Authorized purpose', targetLabel: 'Allowed targets (comma-separated)', expiresLabel: 'Expires',
-    rulesLabel: 'Policy for each action', export: 'Export full audit JSON', packetCount: 'Evidence Packets',
+    rulesLabel: 'Policy for each action', export: 'Export full audit JSON', packetCount: 'Evidence Packets', verificationCount: 'Identity / credential checks',
     ruleAllow: 'ALLOW', ruleConfirm: 'CONFIRM', ruleDeny: 'DENY',
     actionLabels: { OBSERVE_URL: 'Observe URL in isolation', CHECK_IDENTITY: 'Check identity', READ_PUBLIC_DATA: 'Read public data', SUBMIT_PERSONAL_DATA: 'Submit personal data', LOGIN: 'Log in', PAYMENT: 'Pay / transfer', REQUEST_OTP: 'Request OTP', DOWNLOAD_APP: 'Download app' },
   },
@@ -85,10 +86,10 @@ const COPY = {
     revoke: 'Thu hồi quyền Agent', reset: 'Khôi phục mặc định an toàn', timeline: 'Trust Timeline',
     timelineBody: 'Mỗi bước ghi lại thời gian, Agent, công cụ, quyết định và mã bằng chứng.', empty: 'Hoạt động Agent sẽ xuất hiện ở đây.',
     evidence: 'VerifyFirst Evidence', evidenceBody: 'Mỗi kết quả chính sách được đóng gói thành JSON đầy đủ với SHA-256; IFF cung cấp bằng chứng độc lập cho yêu cầu thanh toán x402.',
-    verified: 'Quyết định mới nhất', policy: 'Gói chính sách', chain: 'Tính toàn vẹn', workspace: 'LOCAL WORKSPACE',
+    verified: 'Quyết định mới nhất', policy: 'Gói chính sách', chain: 'Checksum bản ghi', workspace: 'LOCAL WORKSPACE',
     edit: 'Sửa ủy quyền', save: 'Lưu chính sách', cancel: 'Hủy', agentNameLabel: 'Tên Agent', agentIdLabel: 'Agent ID',
     userLabel: 'Người được đại diện', purposeLabel: 'Mục đích ủy quyền', targetLabel: 'Mục tiêu cho phép (phân cách bằng dấu phẩy)', expiresLabel: 'Hết hạn',
-    rulesLabel: 'Chính sách cho từng hành động', export: 'Xuất JSON kiểm toán đầy đủ', packetCount: 'Evidence Packets',
+    rulesLabel: 'Chính sách cho từng hành động', export: 'Xuất JSON kiểm toán đầy đủ', packetCount: 'Evidence Packets', verificationCount: 'Kiểm tra tổ chức / chứng thư',
     ruleAllow: 'ALLOW', ruleConfirm: 'CONFIRM', ruleDeny: 'DENY',
     actionLabels: { OBSERVE_URL: 'Quan sát URL cách ly', CHECK_IDENTITY: 'Kiểm tra danh tính', READ_PUBLIC_DATA: 'Đọc dữ liệu công khai', SUBMIT_PERSONAL_DATA: 'Gửi dữ liệu cá nhân', LOGIN: 'Đăng nhập', PAYMENT: 'Thanh toán / chuyển tiền', REQUEST_OTP: 'Yêu cầu OTP', DOWNLOAD_APP: 'Tải ứng dụng' },
   },
@@ -98,7 +99,7 @@ const timeLabel = (iso: string, language: Language) => new Intl.DateTimeFormat(l
   hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
 }).format(new Date(iso));
 
-const SandboxControl: React.FC<SandboxControlProps> = ({ language, grant, timeline, evidencePackets, onBack, onRevoke, onResetGrant, onUpdateGrant }) => {
+const SandboxControl: React.FC<SandboxControlProps> = ({ language, grant, timeline, evidencePackets, verificationRecords, onBack, onRevoke, onResetGrant, onUpdateGrant }) => {
   const t = COPY[language] ?? COPY['zh-TW'];
   const isActive = grant.status === 'ACTIVE';
   const [editing, setEditing] = useState(false);
@@ -149,7 +150,7 @@ const SandboxControl: React.FC<SandboxControlProps> = ({ language, grant, timeli
   };
 
   const exportAudit = () => {
-    const payload = { schema: 'verifyfirst.agent-workspace.v1', exportedAt: new Date().toISOString(), grant, timeline, evidencePackets };
+    const payload = { schema: 'verifyfirst.agent-workspace.v1', exportedAt: new Date().toISOString(), grant, timeline, evidencePackets, verificationRecords };
     const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
     const link = document.createElement('a');
     link.href = url;
@@ -218,6 +219,7 @@ const SandboxControl: React.FC<SandboxControlProps> = ({ language, grant, timeli
             <div><dt>{t.policy}</dt><dd>verifyfirst.sandbox-policy.v1</dd></div>
             <div><dt>{t.chain}</dt><dd>{latestEvidence ? `${latestEvidence.integrity.digest.slice(0, 8)}…${latestEvidence.integrity.digest.slice(-4)}` : '—'}</dd></div>
             <div><dt>{t.packetCount}</dt><dd>{evidencePackets.length}</dd></div>
+            <div><dt>{t.verificationCount}</dt><dd>{verificationRecords.length}</dd></div>
           </dl>
           <a href="https://ifandonlyif.io" target="_blank" rel="noreferrer">ifandonlyif.io <Link2 size={13} /></a>
           <button className="vf-secondary-button vf-export-audit" onClick={exportAudit}><Download size={14} />{t.export}</button>

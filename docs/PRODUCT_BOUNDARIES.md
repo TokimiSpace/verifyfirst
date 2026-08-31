@@ -9,7 +9,7 @@ separate even when they share infrastructure.
 | Surface | Route | Owner in code | Status |
 |---|---|---|---|
 | Personal anti-scam assistant (To C) | `/` | `App.tsx`, `components/consumer/`, consumer result components, `api/analyze.ts` | Public product |
-| Enterprise trust lab (To B) | `/business/` | `apps/business/`, Agent and credential-response components, `api/agent-policy.ts` | Experimental |
+| Enterprise trust lab (To B) | `/business/` | `apps/business/`, `components/business/`, Agent and credential-response components, `api/agent-policy.ts` | Experimental |
 | Trust Pathways module | `/trust-pathways/` | `public/trust-pathways/` | Experimental, mixed synthetic/live evidence |
 | Update Trust module | `/update-trust/` | `public/update-trust/`, `services/vlei-verifier/` | Experimental, official fixture plus explicit simulation |
 
@@ -41,6 +41,35 @@ the canonical entry for all To B modules.
   does not establish payment safety or delivery.
 - vLEI, KERI, ACDC, and TEL claims must distinguish official fixtures, live
   checks, proposed schemas, and simulation.
+- Raw CESR input stays in browser memory. Persist only a bounded verification
+  summary and digest; do not place raw credentials in local storage or AI
+  prompts.
+- Production vLEI verification requires an explicit root AID, official schema
+  allow-listing, required-field and edge-shape checks, signature verification,
+  TEL/KEL anchoring, and proof that each credential issuer controls its TEL
+  registry. Training-only bypasses must never be enabled for uploaded
+  credentials.
+- Every supplied credential and TEL event must be consumed by one unique,
+  connected terminal chain. Unsupported KERI/TEL event families and unrelated
+  invalid credentials fail closed instead of being ignored.
+- Browser TEL status is a point-in-time snapshot of the supplied CESR stream.
+  A revocation is authoritative only when its sequence, prior-event link, and
+  exact issuer KEL seal all verify; current status still requires live backend
+  retrieval.
+- The represented LEI comes only from the single terminal credential. Never
+  satisfy the cross-check with an upstream QVI or other issuer in the chain.
+- Tool execution stays blocked unless the terminal LEI exactly matches a live
+  GLEIF record whose entity and registration states are `ACTIVE` / `ISSUED`.
+  A production-root browser result remains preflight evidence until a backend
+  verifier checks live OOBI and witness state.
+- The Enterprise Evidence Packet carries an unsigned SHA-256 self-check over
+  the decision, root, checks, credential summaries, live LEI provenance and
+  freshness result, and raw-input digest. It is not an authenticity proof:
+  anyone replacing the packet can recompute the checksum unless the expected
+  checksum is protected through an independent channel.
+- A successful browser verification is evidence, not authorization. It cannot
+  promote a caller-supplied sandbox grant into a production Mandate without
+  server-side re-verification and organization policy.
 - Fail closed when a required verification layer is unavailable.
 
 ## Shared infrastructure
