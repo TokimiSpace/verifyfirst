@@ -4,5 +4,9 @@
     "api/analyze.ts": {
       "maxDuration": 60
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/business", "destination": "/index.html" },
+    { "source": "/business/", "destination": "/index.html" }
+  ]
 }

@@ -13,12 +13,16 @@ We will acknowledge your report within 48 hours and work to address the issue pr
 
 ## Security Best Practices
 
-When deploying CryptoTruth:
+When deploying VerifyFirst:
 
 - Never commit API keys to version control
 - Use environment variables for all secrets
 - Keep dependencies updated
 - Review the `robots.txt` to ensure sensitive paths are blocked
+- Keep To B routes marked experimental and do not treat local sandbox grants as
+  verified production authorization
+- Do not include passwords, OTPs, card data, identity numbers, or secret values
+  in issues, screenshots, fixtures, or test cases
 
 ## Supported Versions
 

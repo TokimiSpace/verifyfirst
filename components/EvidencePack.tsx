@@ -16,6 +16,7 @@ const TRANSLATIONS = {
     copied: 'Copied!',
     download: 'Download as .txt',
     analysisHeader: '=== VerifyFirst AI — Evidence & Reporting Pack ===',
+    localAnalysisHeader: '=== VerifyFirst — On-device Safety Screening & Reporting Pack ===',
     input: 'Input Analyzed',
     type: 'Input Type',
     scamScore: 'Scam Probability',
@@ -31,6 +32,7 @@ const TRANSLATIONS = {
     copied: '已複製！',
     download: '下載 .txt 檔案',
     analysisHeader: '=== VerifyFirst AI — 證據與回報摘要 ===',
+    localAnalysisHeader: '=== VerifyFirst — 本機安全初篩與回報摘要 ===',
     input: '分析對象',
     type: '輸入類型',
     scamScore: '詐騙機率',
@@ -46,6 +48,7 @@ const TRANSLATIONS = {
     copied: 'Đã sao chép!',
     download: 'Tải xuống .txt',
     analysisHeader: '=== VerifyFirst AI — Gói bằng chứng & báo cáo ===',
+    localAnalysisHeader: '=== VerifyFirst — Gói sàng lọc trên thiết bị & báo cáo ===',
     input: 'Đầu vào được phân tích',
     type: 'Loại đầu vào',
     scamScore: 'Xác suất lừa đảo',
@@ -58,7 +61,7 @@ const TRANSLATIONS = {
 
 function buildEvidenceText(analysis: TruthGuardAnalysis, t: typeof TRANSLATIONS.en): string {
   const lines: string[] = [
-    t.analysisHeader,
+    analysis.source === 'local' ? t.localAnalysisHeader : t.analysisHeader,
     '',
     `${t.input}: ${analysis.originalInput}`,
     `${t.type}: ${analysis.inputType}`,

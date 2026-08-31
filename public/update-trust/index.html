@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#091310">
-  <meta name="description" content="VerifyFirst Update Trust：用 GLEIF 官方 keripy regression fixture 走完 vLEI 信任鏈，瀏覽器重算 SAID、驗 KEL 簽章、走 ACDC 邊鏈，再把短效 Agent 委任憑證掛上去，觀察撤銷、過期與上游失效如何立即改變決策。">
-  <title>Update Trust · vLEI Agent Delegation Lifecycle | VerifyFirst</title>
+  <meta name="description" content="VerifyFirst 企業信任實驗室的 Update Trust 模組：用 GLEIF 官方 keripy regression fixture 驗證 vLEI 信任鏈、SAID、KEL 簽章、ACDC 邊鏈、撤銷與到期。實驗性功能，不供正式決策。">
+  <title>Update Trust · Experimental vLEI Lifecycle | VerifyFirst</title>
   <style>
     :root{--bg:#091310;--panel:#101e19;--panel2:#142720;--line:#274036;--text:#f2f7f4;--muted:#9eb2aa;--mint:#8ee3bd;--mint2:#d9ff8b;--red:#ff786a;--amber:#ffc66b;--blue:#76b6ff;--violet:#c7a2ff;--shadow:0 26px 70px #0007}
     *{box-sizing:border-box}html{scroll-behavior:smooth}
@@ -68,13 +68,14 @@
     .disclaimer{margin:12px 0 0;color:#789087;font:8.5px/1.6 monospace}
     .toast{position:fixed;bottom:25px;left:50%;transform:translate(-50%,20px);opacity:0;background:#f0f8f4;color:#0a1712;padding:11px 16px;border-radius:9px;font-weight:800;font-size:12px;transition:.25s;pointer-events:none;z-index:20}.toast.show{opacity:1;transform:translate(-50%,0)}
     @media(max-width:980px){.points{grid-template-columns:repeat(3,1fr)}.points div:nth-child(3){border-right:0}.points div:nth-child(-n+3){border-bottom:1px solid var(--line)}.workspace{grid-template-columns:1fr}.chain-panel{position:static}.stats{grid-template-columns:repeat(3,1fr)}.lifecycle{grid-template-columns:1fr 1fr}.memo-grid{grid-template-columns:1fr}}
-    @media(max-width:640px){.hero{grid-template-columns:1fr;gap:18px}.tour{grid-template-columns:1fr}.play{width:100%}.tour-console{grid-template-columns:72px 1fr}.tour-actions{grid-column:1/-1}.tour-actions button{flex:1}.points{grid-template-columns:1fr}.points div{border-right:0;border-bottom:1px solid var(--line)}.agent-grid,.form .row,.stats,.lifecycle{grid-template-columns:1fr}.step{padding:18px}.packet{grid-template-columns:1fr}.top-note{display:none}.event{grid-template-columns:56px 12px 1fr}.decision{display:block}.decision-icon{margin-bottom:10px}}
+    @media(max-width:640px){.hero{grid-template-columns:1fr;gap:18px}.tour{grid-template-columns:1fr}.play{width:100%}.tour-console{grid-template-columns:72px 1fr}.tour-actions{grid-column:1/-1}.tour-actions button{flex:1}.points{grid-template-columns:1fr}.points div{border-right:0;border-bottom:1px solid var(--line)}.agent-grid,.form .row,.stats,.lifecycle{grid-template-columns:1fr}.step{padding:18px}.packet{grid-template-columns:1fr}.top-note,.top a.nav[href="/business/"]{display:none}.event{grid-template-columns:56px 12px 1fr}.decision{display:block}.decision-icon{margin-bottom:10px}}
   </style>
 </head>
 <body>
   <header class="top">
-    <a class="brand" href="/"><span class="mark">V</span><span><b>VerifyFirst</b><small>UPDATE TRUST</small></span></a>
-    <span class="top-note">GLEIF 官方測試 fixture + 明確標示的模擬 · 不連接正式系統</span>
+    <a class="brand" href="/business/"><span class="mark">V</span><span><b>VerifyFirst</b><small>B2B LAB · UPDATE TRUST</small></span></a>
+    <span class="top-note">EXPERIMENTAL · GLEIF 官方測試 fixture + 明確標示的模擬 · 不供正式決策</span>
+    <a class="nav" href="/business/">企業實驗室</a>
     <a class="nav" href="/trust-pathways/">← Trust Pathways</a>
     <button id="resetAll">重置</button>
   </header>

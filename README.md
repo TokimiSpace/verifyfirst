@@ -1,54 +1,56 @@
-# VerifyFirst Sandbox (verify1st.tw)
+# VerifyFirst (verify1st.tw)
 
-A shared safety gateway for people and AI Agents. Suspicious messages, links,
-identities, and Agent actions enter one sandbox before anything consequential
-happens. The interface returns one of three human-readable decisions: continue,
-confirm, or stop.
+VerifyFirst contains two deliberately separated product surfaces:
 
-The consumer verification tool remains intact. A deterministic Agent Filter
-now adds identity, scoped authorization, high-risk action interception, human
-confirmation, revocation, and a Trust Timeline for enterprise workflows.
+| Surface | Audience | Stability | URL |
+|---|---|---|---|
+| **Personal anti-scam assistant (To C)** | People checking suspicious messages, links, calls, accounts, or screenshots | Public product | [verify1st.tw](https://verify1st.tw/) |
+| **Enterprise trust lab (To B)** | Compliance, risk, security, and Agent-platform teams | **Experimental** — no SLA, not for production decisions | [verify1st.tw/business/](https://verify1st.tw/business/) |
 
-Live at **[verify1st.tw](https://verify1st.tw)**.
+The To C product is multilingual (Traditional Chinese, English, and Vietnamese).
+It asks how far an incident has progressed, checks public evidence, and turns the
+result into an on-device safety conversation for verification, loss prevention,
+and reporting. Users are explicitly told not to paste passwords, OTPs, full card
+numbers, ID numbers, or secret keys.
+
+The To B lab contains the deterministic Agent policy gate, credential-incident
+response, Trust Pathways scenarios, vLEI lifecycle verifier, Evidence Packets,
+revocation, and IFF x402 preflight. Every To B entry is marked experimental and
+states its trust boundary.
+
+See [Product Boundaries](docs/PRODUCT_BOUNDARIES.md) before extending or
+deploying either surface.
 
 ## Features
 
-- **Multi-input analysis** — scam SMS text, suspicious URLs (including bare
-  domains), phone numbers, screenshots (client-side OCR), and `.txt` files
-- **Objective pre-checks before AI** — RDAP domain age, Google Safe Browsing,
-  ScamSniffer crypto-phishing blocklist, VirusTotal, DNS resolution
-- **Agent sandbox** — server-side page observation: follows redirect chains
-  (HTTP + meta-refresh/JS), detects login/OTP/payment/APK-download asks
-- **Usable Agent policy gate** — submit a real action, target, purpose, and
-  field-name list in the UI or through `POST /api/agent-policy`; the
-  deterministic gate returns `ALLOW`, `REQUIRE_CONFIRMATION`, or `DENY`
-- **Revocable authorization** — a visible control surface shows which Agent is
-  acting for whom, its purpose, expiry, allowed scope, and forbidden scope
-- **Trust Timeline** — records grants, policy decisions, user confirmation,
-  denial, and revocation with evidence identifiers
-- **Credential incident response** — parses vendor exposure notices locally,
-  compares environment-variable names without sending or storing secret values,
-  creates revoke/reissue/deploy/review/verify tasks, and seals completions into
-  the Trust Timeline with real SHA-256 evidence identifiers
-- **Portable Evidence Packets** — every Agent policy decision is sealed as
-  complete JSON with a SHA-256 digest; a human approval links back to the
-  preceding confirmation packet
-- **Local policy workspace** — edit Agent, represented user, purpose, expiry,
-  target allowlist, and action rules; state persists on the device and the
-  complete audit workspace can be exported
-- **IFF x402 preflight** — uses the official
-  [`@ifandonlyif/x402-preflight`](https://ifandonlyif.io/sdk) SDK whenever the
-  sandbox observes an x402 `402 Payment Required`; it compares the received
-  requirement with independent evidence before any payment policy could run
-- **Hard blocklist floors** — confirmed Safe Browsing/ScamSniffer/VirusTotal
-  hits clamp the verdict in code; the LLM cannot be talked out of them
-- **Cofacts integration** — crowd-sourced Taiwanese fact-check reports
-- **Google Search grounding** — Gemini researches reputation in real time
-- **Graceful degradation** — L0–L5 severity levels when upstream services fail
-- **165 reporting** — pre-filled report modal for Taiwan's anti-fraud hotline
-- **Multi-language** — Traditional Chinese, English, Vietnamese
-- **Senior Mode** — larger text, simplified results
+### To C — personal anti-scam
 
+- **Guided intake** — captures only the contact channel and whether the person
+  received, opened, shared information, or already paid
+- **Multi-input analysis** — SMS/text, suspicious URLs (including bare domains),
+  phone numbers, accounts, screenshots with client-side OCR, and `.txt` files
+- **Evidence before AI** — RDAP, Google Safe Browsing, ScamSniffer,
+  VirusTotal, DNS, Cofacts, and live URL observation
+- **Safety conversation** — turns the current result and incident stage into
+  immediate, multilingual recovery, verification, and reporting steps; chat
+  stays in page memory and never requests credentials
+- **Hard safety floors** — confirmed blocklist hits clamp the verdict in code;
+  model output cannot override them
+- **Senior Mode** — larger type, simpler language, and direct access to 165
+
+### To B — enterprise trust lab (experimental)
+
+- **Agent policy gate** — deterministic `ALLOW`, `REQUIRE_CONFIRMATION`, or
+  `DENY` through the UI and `POST /api/agent-policy`
+- **Revocable authorization and Evidence Packets** — purpose, target, expiry,
+  action boundaries, SHA-256 evidence, and a local Trust Timeline
+- **Credential incident response** — compares environment-variable names
+  locally, never secret values, and builds accountable remediation tasks
+- **Trust Pathways** — cross-organization scenarios at `/trust-pathways/`
+- **Update Trust** — vLEI / KERI / ACDC / TEL lifecycle verification at
+  `/update-trust/`
+- **IFF x402 preflight** — compares an observed payment requirement with
+  independent evidence; it never holds keys, signs, or pays
 ## Tech Stack
 
 - **Frontend**: React 19, TypeScript, Tailwind CSS, Vite
@@ -72,7 +74,7 @@ Live at **[verify1st.tw](https://verify1st.tw)**.
    twice are promoted to the shared 72-hour Blob cache, avoiding writes for
    one-off messages
 
-## How the Agent Filter Works
+## How the Experimental Agent Filter Works
 
 1. Resolve the Agent identity and the user it represents
 2. Reject a mismatched, expired, or revoked grant before any tool runs
@@ -135,10 +137,11 @@ guarantee that payment is safe or that the endpoint will deliver afterward.
 The integration never holds a wallet key or executes a payment. Public checks
 need no API key; `IFF_BASE_URL` exists only for staging or local IFF instances.
 
-## Trust Pathways and Update Trust (hackathon demo pages)
+## Enterprise Lab Modules
 
-Two standalone static pages under `public/` back the Trustworthy AI Hackathon
-2026 submission (no React, no build step, synthetic data only):
+The enterprise lab links two standalone static modules under `public/`. Their
+URLs remain stable for existing demos, but both are explicitly experimental and
+must not be treated as production identity or compliance decisions:
 
 - **Demo video production kit** — the
   [Track 05–06 ComfyUI + MiniMax plan](docs/demo-video/track-05-06-comfyui-minimax-production-plan.md)
@@ -176,8 +179,8 @@ Two standalone static pages under `public/` back the Trustworthy AI Hackathon
 
 1. Clone and install:
    ```bash
-   git clone https://github.com/topben/verify1st.git
-   cd verify1st
+   git clone https://github.com/topben/cryptotruth.git
+   cd cryptotruth
    npm install
    ```
 
@@ -244,13 +247,18 @@ npm run preview
 ## Project Structure
 
 ```
-verify1st/
+cryptotruth/
+├── apps/
+│   └── business/
+│       └── BusinessApp.tsx   # To B enterprise lab entry (experimental)
 ├── api/
 │   ├── analyze.ts            # Serverless endpoint: pre-checks → Gemini → post-processing
 │   ├── agent-policy.ts       # Deterministic Agent gate + SHA-256 evidence
 │   ├── example-responses.ts  # Canned responses for demo chips (zero quota)
 │   └── safe-domains.ts       # Self/known-safe allowlist short-circuit
-├── components/               # React UI (results panels, search, senior mode)
+├── components/
+│   ├── consumer/             # To C guided intake + safety conversation
+│   └── *.tsx                 # Shared and legacy feature components
 ├── services/
 │   ├── agentPolicy.ts        # Deterministic Agent authorization gate
 │   ├── agentEvidence.ts      # Canonical Evidence Packet hashing
@@ -261,8 +269,8 @@ verify1st/
 ├── public/
 │   ├── trust-pathways/       # Hackathon demo: five pathways + judge tour + vLEI lab
 │   └── update-trust/         # vLEI lifecycle page: said.js verifier + pinned fixture
-├── App.tsx
-├── index.tsx
+├── App.tsx                   # To C multilingual anti-scam product
+├── index.tsx                 # Route-level split; lazy-loads one product
 ├── types.ts
 └── vite.config.ts
 ```

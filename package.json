@@ -1,12 +1,20 @@
 {
   "name": "verify1st",
   "version": "1.0.0",
-  "description": "Verifiable action sandbox and deterministic policy gate for AI Agents, with content risk checks and x402 preflight",
+  "description": "Multilingual anti-scam assistant with an experimental enterprise trust lab for Agent policy, evidence, vLEI, and x402 preflight",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "license": "MIT",
+  "homepage": "https://verify1st.tw",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/topben/cryptotruth.git"
+  },
+  "bugs": {
+    "url": "https://github.com/topben/cryptotruth/issues"
+  },
   "keywords": [
     "anti-scam",
     "fraud-detection",
@@ -15,7 +23,9 @@
     "gemini",
     "ai",
     "react",
-    "vite"
+    "vite",
+    "x402",
+    "vlei"
   ],
   "scripts": {
     "dev": "vite",

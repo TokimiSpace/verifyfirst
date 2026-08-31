@@ -61,7 +61,7 @@ export interface KOLAnalysis {
   searchQueries?: string[]; // Search queries used by Google Search grounding
   groundedSearch?: boolean; // Indicates if Google Search grounding was used
   lastAnalyzed: string;
-  source?: 'cache' | 'api'; // Whether result came from cache or live API
+  source?: 'cache' | 'api' | 'local'; // Cache, verified service response, or on-device fallback
   cachedAt?: number; // Timestamp when result was cached
 }
 

@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
 import './styles.css';
+
+const isBusinessRoute = window.location.pathname === '/business' || window.location.pathname.startsWith('/business/');
+const ProductApp = React.lazy(() => isBusinessRoute ? import('./apps/business/BusinessApp') : import('./App'));
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -11,6 +13,8 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <Suspense fallback={<div className="vf-route-loading" role="status">VerifyFirst</div>}>
+      <ProductApp />
+    </Suspense>
   </React.StrictMode>
 );

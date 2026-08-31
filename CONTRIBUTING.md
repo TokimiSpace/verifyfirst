@@ -1,4 +1,4 @@
-# Contributing to CryptoTruth
+# Contributing to VerifyFirst
 
 Thank you for your interest in contributing! This document provides guidelines for contributing.
 
@@ -19,16 +19,18 @@ By participating, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md
 
 1. Fork the repository and create your branch from `main`
 2. Run `npm install` to install dependencies
-3. Make your changes following the code style
-4. Test locally with `npm run dev`
-5. Ensure the build passes: `npm run build`
-6. Submit a pull request with a clear description
+3. Read [Product Boundaries](docs/PRODUCT_BOUNDARIES.md) and identify whether
+   the change affects To C, To B, or shared infrastructure
+4. Make your changes following the code style
+5. Run `npm run typecheck`, `npm test`, and `npm run build`
+6. Test the affected desktop and mobile flows locally
+7. Submit a pull request describing data-flow, trust-claim, and failure-mode changes
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/your-username/verify1st.git
-cd verify1st
+git clone https://github.com/your-username/cryptotruth.git
+cd cryptotruth
 npm install
 cp .env.example .env.local
 # Add your GEMINI_API_KEY to .env.local
@@ -45,10 +47,12 @@ npm run dev
 ## Project Structure
 
 ```
-api/           # Serverless API endpoints
-components/    # React components
-services/      # API services
-public/        # Static assets
+apps/business/       # To B experimental enterprise entry
+api/                 # Serverless API endpoints
+components/consumer/ # To C guided intake and safety conversation
+components/          # Shared and feature UI
+services/            # Analysis, policy, and evidence services
+public/              # Static enterprise lab modules and assets
 ```
 
 Thank you for contributing!
