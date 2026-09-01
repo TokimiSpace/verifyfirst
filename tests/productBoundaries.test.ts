@@ -65,7 +65,7 @@ describe('To C / To B product boundaries', () => {
     expect(business).toContain('組織身分與代表權');
     expect(business).toContain('機器付款條件預檢');
     expect(x402Workbench).toContain('schema: X402_EVIDENCE_SCHEMA');
-    expect(x402Api).toContain("X402_EVIDENCE_SCHEMA = 'verifyfirst.x402-preflight.v1'");
+    expect(x402Api).toContain("X402_EVIDENCE_SCHEMA = 'verifyfirst.x402-preflight.v2'");
     expect(x402Workbench).toContain("payment: 'NOT_EXECUTED'");
     expect(x402Workbench).toContain('未自動改用模擬結果');
     expect(x402Api).toContain('merchantEndpointFetched: false');

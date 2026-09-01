@@ -136,13 +136,19 @@ spoof the forwarded IP headers used by the runtime adapter.
 
 ## Evidence and compatibility
 
-Current browser exports use these versioned schemas:
+Current browser and API exports use these versioned schemas:
 
 - `verifyfirst.enterprise-verification.v1`
 - [`verifyfirst.vlei-handoff.v1`](../public/schemas/verifyfirst.vlei-handoff.v1.schema.json)
-- [`verifyfirst.x402-preflight.v1`](../public/schemas/verifyfirst.x402-preflight.v1.schema.json)
-- [`verifyfirst.x402-preflight-response.v1`](../public/schemas/verifyfirst.x402-preflight-response.v1.schema.json)
+- [`verifyfirst.x402-preflight.v2`](../public/schemas/verifyfirst.x402-preflight.v2.schema.json)
+- [`verifyfirst.x402-preflight-response.v2`](../public/schemas/verifyfirst.x402-preflight-response.v2.schema.json)
 - `verifyfirst.agent-decision.v1`
+
+The v1 x402 [Evidence](../public/schemas/verifyfirst.x402-preflight.v1.schema.json)
+and [API response](../public/schemas/verifyfirst.x402-preflight-response.v1.schema.json)
+schemas remain published for historical packets created with
+`@ifandonlyif/x402-preflight@0.1.0`. Published schema versions are immutable;
+new fields or verifier contracts require a new schema version.
 
 The SHA-256 envelope is an unsigned self-check. It detects a changed body when
 the expected digest is protected separately; it is not issuer authenticity,

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://verify1st.tw/schemas/verifyfirst.x402-preflight-response.v2.schema.json",
+  "title": "VerifyFirst x402 Preflight API Response v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "checkedAt", "endpoint", "source", "iff", "policy", "verifier", "execution", "limitations"],
+  "properties": {
+    "schema": { "const": "verifyfirst.x402-preflight-response.v2" },
+    "checkedAt": { "type": "string", "format": "date-time" },
+    "endpoint": { "type": "string", "format": "uri", "pattern": "^https://" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement", "externalEvidence", "merchantEndpointFetched"],
+      "properties": {
+        "requirement": { "const": "CALLER_SUPPLIED" },
+        "externalEvidence": { "enum": ["IFF_PUBLIC_API", "IFF_CUSTOM_API", "IFF_UNAVAILABLE", "NOT_QUERIED_POLICY_MISMATCH", "SIMULATED"] },
+        "merchantEndpointFetched": { "const": false }
+      }
+    },
+    "iff": { "anyOf": [{ "$ref": "verifyfirst.x402-preflight.v2.schema.json#/$defs/iffResult" }, { "type": "null" }] },
+    "policy": { "$ref": "verifyfirst.x402-preflight.v2.schema.json#/$defs/policyEvaluation" },
+    "verifier": { "$ref": "verifyfirst.x402-preflight.v2.schema.json#/$defs/verifier" },
+    "execution": { "$ref": "verifyfirst.x402-preflight.v2.schema.json#/$defs/execution" },
+    "limitations": { "type": "array", "items": { "type": "string" } }
+  }
+}

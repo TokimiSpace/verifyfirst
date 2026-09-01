@@ -394,21 +394,20 @@ export interface CredentialIncidentAnalysis {
   services: CredentialService[];
 }
 
+export interface CredentialEnvironmentReference {
+  id: string;
+  label: string;
+  system: string;
+}
+
 export interface CredentialInventoryMatch {
   name: string;
   service: string;
   severity: CredentialIncidentSeverity;
-  environments: Array<{
-    id: string;
-    label: string;
-    system: string;
-  }>;
+  environments: CredentialEnvironmentReference[];
 }
 
-export interface CredentialEnvironmentInventory {
-  id: string;
-  label: string;
-  system: string;
+export interface CredentialEnvironmentInventory extends CredentialEnvironmentReference {
   credentialNames: string[];
 }
 
@@ -418,7 +417,7 @@ export interface CredentialResponseAction {
   title: string;
   detail: string;
   affectedNames: string[];
-  affectedEnvironments: string[];
+  affectedEnvironments: CredentialEnvironmentReference[];
   owner: string;
   status: CredentialActionStatus;
   completedAt?: string;

@@ -46,12 +46,23 @@ describe('open-source and self-hosting contract', () => {
     expect(read('tailwind.config.cjs')).toContain("'./components/**/*.{ts,tsx}'");
   });
 
-  it('publishes stable x402 API and Evidence schema identifiers', () => {
-    const evidence = JSON.parse(read('public/schemas/verifyfirst.x402-preflight.v1.schema.json'));
-    const response = JSON.parse(read('public/schemas/verifyfirst.x402-preflight-response.v1.schema.json'));
-    expect(evidence.properties.schema.const).toBe('verifyfirst.x402-preflight.v1');
-    expect(evidence.$defs.execution.properties.status.const).toBe('NOT_EXECUTED');
-    expect(response.properties.schema.const).toBe('verifyfirst.x402-preflight-response.v1');
+  it('keeps historical x402 schemas immutable and publishes the current version separately', () => {
+    const evidenceV1 = JSON.parse(read('public/schemas/verifyfirst.x402-preflight.v1.schema.json'));
+    const responseV1 = JSON.parse(read('public/schemas/verifyfirst.x402-preflight-response.v1.schema.json'));
+    const evidenceV2 = JSON.parse(read('public/schemas/verifyfirst.x402-preflight.v2.schema.json'));
+    const responseV2 = JSON.parse(read('public/schemas/verifyfirst.x402-preflight-response.v2.schema.json'));
+
+    expect(evidenceV1.properties.schema.const).toBe('verifyfirst.x402-preflight.v1');
+    expect(evidenceV1.$defs.verifier.properties.iffSdk.const).toBe('@ifandonlyif/x402-preflight@0.1.0');
+    expect(evidenceV1.$defs.iffResult.properties).not.toHaveProperty('localPayeeFingerprint');
+    expect(responseV1.properties.schema.const).toBe('verifyfirst.x402-preflight-response.v1');
+
+    expect(evidenceV2.properties.schema.const).toBe('verifyfirst.x402-preflight.v2');
+    expect(evidenceV2.$defs.verifier.properties.iffSdk.const).toBe('@ifandonlyif/x402-preflight@0.2.0');
+    expect(evidenceV2.$defs.iffResult.properties).toHaveProperty('localPayeeFingerprint');
+    expect(evidenceV2.$defs.execution.properties.status.const).toBe('NOT_EXECUTED');
+    expect(responseV2.properties.schema.const).toBe('verifyfirst.x402-preflight-response.v2');
+    expect(responseV2.properties.iff.anyOf[0].$ref).toContain('verifyfirst.x402-preflight.v2.schema.json');
     expect(read('api/x402-preflight.ts')).toContain("X402_POLICY_VERSION = 'verifyfirst.x402-enterprise-policy.v1'");
   });
 

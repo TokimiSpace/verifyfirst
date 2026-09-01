@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://verify1st.tw/schemas/verifyfirst.x402-preflight.v1.schema.json",
-  "title": "VerifyFirst x402 Preflight Evidence v1",
+  "$id": "https://verify1st.tw/schemas/verifyfirst.x402-preflight.v2.schema.json",
+  "title": "VerifyFirst x402 Preflight Evidence v2",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,7 +10,7 @@
     "iff", "policyEvaluation", "execution", "source", "limitations", "id", "integrity"
   ],
   "properties": {
-    "schema": { "const": "verifyfirst.x402-preflight.v1" },
+    "schema": { "const": "verifyfirst.x402-preflight.v2" },
     "createdAt": { "type": "string", "format": "date-time" },
     "mode": { "enum": ["LIVE", "SIMULATION"] },
     "case": {
@@ -88,7 +88,7 @@
       "required": ["policyVersion", "iffSdk"],
       "properties": {
         "policyVersion": { "const": "verifyfirst.x402-enterprise-policy.v1" },
-        "iffSdk": { "const": "@ifandonlyif/x402-preflight@0.1.0" }
+        "iffSdk": { "const": "@ifandonlyif/x402-preflight@0.2.0" }
       }
     },
     "source": {
@@ -125,6 +125,12 @@
         "reportHash": { "type": "string" },
         "receivedFingerprint": { "type": "string" },
         "receivedOptionFingerprints": { "type": "array", "items": { "type": "string" } },
+        "fingerprintVersion": { "type": "integer", "minimum": 1 },
+        "localReceivedFingerprint": { "type": "string" },
+        "localReceivedOptionFingerprints": { "type": "array", "items": { "type": "string" } },
+        "localPayeeFingerprint": { "type": "string" },
+        "localPayeeOptionFingerprints": { "type": "array", "items": { "type": "string" } },
+        "receivedFingerprintMatchesLocal": { "type": "boolean" },
         "observedFingerprint": { "type": "string" },
         "observedOptionFingerprints": { "type": "array", "items": { "type": "string" } },
         "unmatchedReceivedOptions": { "type": "array", "items": { "type": "string" } },
@@ -222,3 +228,4 @@
     }
   }
 }
+

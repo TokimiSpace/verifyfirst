@@ -13,6 +13,13 @@ SDK result. A mismatch fails closed as
 separate an amount-only change from a change of recipient without implying that
 either recipient is trustworthy.
 
+Evidence created by this integration uses
+`verifyfirst.x402-preflight.v2` and API responses use
+`verifyfirst.x402-preflight-response.v2`. The original v1 schemas remain
+available unchanged for historical evidence created with SDK 0.1.0. Consumers
+must select a validator by the packet's `schema` value instead of treating the
+new version as a backward-compatible mutation.
+
 The default evidence service is `https://ifandonlyif.io`. A self-hoster may set
 `IFF_BASE_URL` to a compatible service. An override changes the Evidence source
 to `IFF_CUSTOM_API`; it is never labeled as the public IFF service.

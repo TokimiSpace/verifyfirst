@@ -69,7 +69,21 @@ describe('credential incident response', () => {
     expect(actions.map(action => action.phase)).toEqual(['REVOKE', 'REISSUE', 'DEPLOY', 'REVIEW', 'VERIFY']);
     expect(actions.every(action => action.owner === 'Security owner')).toBe(true);
     expect(actions.every(action => action.affectedNames.includes('OPENAI_API_KEY'))).toBe(true);
-    expect(actions.every(action => action.affectedEnvironments.includes('Production'))).toBe(true);
+    expect(actions.every(action => action.affectedEnvironments.some(environment => environment.id === 'env_prod'))).toBe(true);
+  });
+
+  it('keeps same-named environments distinct by id and system', () => {
+    const analysis = analyzeCredentialIncident(incidentNotice);
+    const matches = matchCredentialInventory(analysis, [
+      { id: 'env_api', label: 'Production', system: 'API', credentialNames: ['OPENAI_API_KEY'] },
+      { id: 'env_worker', label: 'Production', system: 'Worker', credentialNames: ['OPENAI_API_KEY'] },
+    ]);
+    const actions = buildCredentialResponseActions(matches, 'Security owner');
+
+    expect(actions[0].affectedEnvironments).toEqual([
+      { id: 'env_api', label: 'Production', system: 'API' },
+      { id: 'env_worker', label: 'Production', system: 'Worker' },
+    ]);
   });
 
   it('creates a real SHA-256 evidence identifier', async () => {

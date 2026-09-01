@@ -20,6 +20,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import {
+  CredentialEnvironmentReference,
   CredentialEnvironmentInventory,
   CredentialIncidentAnalysis,
   CredentialIncidentWorkspace,
@@ -60,6 +61,12 @@ interface LegacyCredentialWorkspace {
   timeline: TrustTimelineEvent[];
 }
 
+type StoredCredentialWorkspace = Omit<CredentialIncidentWorkspace, 'actions'> & {
+  actions: Array<Omit<CredentialResponseAction, 'affectedEnvironments'> & {
+    affectedEnvironments: Array<CredentialEnvironmentReference | string>;
+  }>;
+};
+
 const createEnvironmentDraft = (): CredentialEnvironmentDraft => ({
   id: `env_${Date.now().toString(36)}_${crypto.randomUUID().slice(0, 8)}`,
   label: '',
@@ -72,6 +79,17 @@ const draftsFromInventory = (environments: CredentialEnvironmentInventory[]): Cr
     ? environments.map(environment => ({ ...environment, input: environment.credentialNames.join('\n') }))
     : [createEnvironmentDraft()]
 );
+
+const normalizeAffectedEnvironments = (
+  affected: Array<CredentialEnvironmentReference | string>,
+  environments: CredentialEnvironmentInventory[],
+): CredentialEnvironmentReference[] => [...new Map(
+  affected
+    .flatMap(environment => typeof environment === 'string'
+      ? environments.filter(candidate => candidate.label === environment)
+      : [environment])
+    .map(({ id, label, system }) => [id, { id, label, system }] as const),
+).values()];
 
 const DEMO_NOTICE = `Zeabur security incident update — 2026-08-27
 An unauthorized party used an internal service credential to retrieve project environment variable records. Customers should revoke and replace affected credentials and review unusual usage and charges.
@@ -168,8 +186,14 @@ const ACTION_UI = {
 
 const loadWorkspace = (): CredentialIncidentWorkspace | null => {
   try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as CredentialIncidentWorkspace | null;
-    if (parsed?.version === 2 && parsed.analysis?.id && Array.isArray(parsed.environments)) return parsed;
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as StoredCredentialWorkspace | null;
+    if (parsed?.version === 2 && parsed.analysis?.id && Array.isArray(parsed.environments)) return {
+      ...parsed,
+      actions: parsed.actions.map(action => ({
+        ...action,
+        affectedEnvironments: normalizeAffectedEnvironments(action.affectedEnvironments, parsed.environments),
+      })),
+    };
 
     const legacy = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) ?? 'null') as LegacyCredentialWorkspace | null;
     if (legacy?.version !== 1 || !legacy.analysis?.id) return null;
@@ -182,7 +206,10 @@ const loadWorkspace = (): CredentialIncidentWorkspace | null => {
       inventoryNames: legacy.inventoryNames,
       environments,
       matches: legacy.matches.map(match => ({ ...match, environments: environments.filter(environment => environment.credentialNames.includes(match.name)).map(({ id, label, system }) => ({ id, label, system })) })),
-      actions: legacy.actions.map(action => ({ ...action, affectedEnvironments: environments.map(environment => environment.label) })),
+      actions: legacy.actions.map(action => ({
+        ...action,
+        affectedEnvironments: environments.map(({ id, label, system }) => ({ id, label, system })),
+      })),
       timeline: legacy.timeline,
     };
   } catch {
@@ -200,6 +227,10 @@ const makeTimelineEvent = async (
 const timeLabel = (iso: string, language: Language) => new Intl.DateTimeFormat(language, {
   month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
 }).format(new Date(iso));
+
+const environmentLabel = (environment: CredentialEnvironmentReference) => (
+  environment.system ? `${environment.label} (${environment.system})` : environment.label
+);
 
 const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({ language, onBack }) => {
   const t = COPY[language] ?? COPY['zh-TW'];
@@ -333,7 +364,7 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
       actor: action.owner.trim(),
       action: completing ? `${action.phase}_COMPLETED` : `${action.phase}_REOPENED`,
       target: action.affectedEnvironments.length
-        ? `${action.affectedEnvironments.join(', ')} / ${action.affectedNames.join(', ')}`
+        ? `${action.affectedEnvironments.map(environmentLabel).join(', ')} / ${action.affectedNames.join(', ')}`
         : action.affectedNames.join(', ') || 'credential inventory',
       decision: completing ? 'ALLOW' : 'REQUIRE_CONFIRMATION',
       detail: localizedAction.title,
@@ -371,7 +402,7 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
       `Direct matches: ${workspace.matches.map(match => match.name).join(', ') || 'none'}`,
       ...workspace.environments.map(environment => `Environment: ${environment.label}${environment.system ? ` (${environment.system})` : ''} — ${environment.credentialNames.join(', ')}`),
       '',
-      ...workspace.actions.map(action => `[${action.status}] ${action.phase} — ${actionCopy(action).title} — ${action.affectedEnvironments.join(', ') || 'all inventory'} — ${action.owner || 'unassigned'}${action.evidenceId ? ` — ${action.evidenceId}` : ''}`),
+      ...workspace.actions.map(action => `[${action.status}] ${action.phase} — ${actionCopy(action).title} — ${action.affectedEnvironments.map(environmentLabel).join(', ') || 'all inventory'} — ${action.owner || 'unassigned'}${action.evidenceId ? ` — ${action.evidenceId}` : ''}`),
     ];
     await navigator.clipboard.writeText(lines.join('\n'));
     setCopied(true);
@@ -476,7 +507,7 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
               <div className="vf-ledger-list">
                 {workspace.analysis.exposedNames.map(name => {
                   const match = workspace.matches.find(item => item.name === name);
-                  return <div key={name} className={match ? 'is-match' : ''}><code>{name}</code>{match ? <strong title={match.environments.map(environment => environment.label).join(', ')}>{match.environments.map(environment => environment.label).join(' · ')}</strong> : <span>NOTICE</span>}</div>;
+                  return <div key={name} className={match ? 'is-match' : ''}><code>{name}</code>{match ? <strong title={match.environments.map(environmentLabel).join(', ')}>{match.environments.map(environmentLabel).join(' · ')}</strong> : <span>NOTICE</span>}</div>;
                 })}
               </div>
             </aside>
@@ -499,7 +530,7 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
                     <div className="vf-action-copy">
                       <div><span>{PHASE_LABEL[action.phase]}</span><strong>{actionCopy(action).title}</strong></div>
                       <p>{actionCopy(action).detail}</p>
-                      {action.affectedNames.length > 0 && <small>{t.affectedEnvironments}: {action.affectedEnvironments.join(' · ')} · {t.affects}: {action.affectedNames.join(' · ')}</small>}
+                      {action.affectedNames.length > 0 && <small>{t.affectedEnvironments}: {action.affectedEnvironments.map(environmentLabel).join(' · ')} · {t.affects}: {action.affectedNames.join(' · ')}</small>}
                     </div>
                     <label className="vf-action-owner"><span><UserRound size={12} />{t.taskOwner}</span><input value={action.owner} onChange={event => updateActionOwner(action.id, event.target.value)} placeholder="—" /></label>
                     <button className="vf-action-toggle" onClick={() => toggleAction(action)}>

@@ -134,7 +134,11 @@ export const buildCredentialResponseActions = (
   owner: string,
 ): CredentialResponseAction[] => {
   const affectedNames = matches.map(match => match.name);
-  const affectedEnvironments = unique(matches.flatMap(match => match.environments.map(environment => environment.label)));
+  const affectedEnvironments = [...new Map(
+    matches
+      .flatMap(match => match.environments)
+      .map(environment => [environment.id, environment] as const),
+  ).values()];
   const label = namesLabel(matches) || '尚未命中的憑證';
   const base = `${Date.now().toString(36)}_${affectedNames.join('_').toLowerCase() || 'no_match'}`;
   return [
