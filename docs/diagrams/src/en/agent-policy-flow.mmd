@@ -1,0 +1,8 @@
+flowchart LR
+  G["Short-lived grant<br/>principal, purpose, target, expiry"] --> API["POST /api/agent-policy"]
+  R["Action request<br/>action, target, purpose, field names"] --> API
+  API --> V["Shape validation"]
+  V --> P["Deterministic policy<br/>ALLOW / CONFIRM / DENY"]
+  P --> E["SHA-256 Evidence Packet"]
+  E --> T["Trust Timeline"]
+  P --> H["Human confirmation when required"]

@@ -1,0 +1,21 @@
+sequenceDiagram
+  participant O as 企業操作人員
+  participant W as vLEI 工作台
+  participant L as GLEIF API
+  participant V as 瀏覽器 CESR verifier
+  participant T as Local Timeline
+  participant H as 企業後端／QVI
+
+  O->>W: 輸入 20 字元 LEI
+  W->>L: GET 官方 LEI record
+  L-->>W: 法人、狀態、Golden Copy provenance
+  O->>W: 貼上／選擇 CESR，選 production 或 fixture root
+  W->>V: 原始 CESR（只在記憶體）
+  V->>V: framing、重複 JSON key、SAID、KEL signature
+  V->>V: ACDC edges、TEL anchoring、registry ownership
+  V->>V: 官方 schema allowlist、terminal LEI、trust root
+  V-->>W: checks、credential summaries、source digest
+  W->>W: terminal LEI 對照 15 分鐘內 GLEIF record
+  W->>T: 僅保存摘要、decision 與 SHA-256
+  W-->>O: unsigned Evidence JSON
+  O->>H: production 復驗與組織政策

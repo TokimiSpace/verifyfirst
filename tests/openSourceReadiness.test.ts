@@ -82,6 +82,28 @@ describe('open-source and self-hosting contract', () => {
     expect(selfHosting).toContain('The model is never the verifier');
   });
 
+  it('pre-renders bilingual README diagrams without GitHub rich-display dependencies', () => {
+    const pkg = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
+    expect(pkg.scripts?.['docs:diagrams']).toBe('node scripts/render-readme-diagrams.mjs');
+
+    for (const [readme, locale] of [['README.md', 'zh-TW'], ['README.en.md', 'en']] as const) {
+      const markdown = read(readme);
+      expect(markdown).not.toContain('~~~mermaid');
+      const imagePaths = new Set(
+        [...markdown.matchAll(new RegExp(`docs/diagrams/${locale}/[a-z0-9-]+\\.png`, 'g'))]
+          .map((match) => match[0]),
+      );
+      expect(imagePaths.size).toBe(7);
+
+      for (const imagePath of imagePaths) {
+        const image = fs.readFileSync(path.resolve(imagePath));
+        expect(image.subarray(0, 8).equals(Buffer.from('\x89PNG\r\n\x1a\n', 'binary'))).toBe(true);
+        expect(image.byteLength).toBeGreaterThan(10_000);
+        expect(fs.existsSync(path.resolve('docs/diagrams/src', locale, `${path.basename(imagePath, '.png')}.mmd`))).toBe(true);
+      }
+    }
+  });
+
   it('links a public data-processing notice beside the To C input without crowding product footers', () => {
     const notice = read('public/privacy/index.html');
     const consumer = read('App.tsx');

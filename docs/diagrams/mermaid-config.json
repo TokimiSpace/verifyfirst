@@ -1,0 +1,19 @@
+{
+  "fontFamily": "Arial, Noto Sans TC, Noto Sans, sans-serif",
+  "flowchart": {
+    "curve": "basis",
+    "htmlLabels": true,
+    "useMaxWidth": true
+  },
+  "sequence": {
+    "diagramMarginX": 24,
+    "diagramMarginY": 24,
+    "messageMargin": 38,
+    "useMaxWidth": true,
+    "wrap": true
+  },
+  "themeVariables": {
+    "fontFamily": "Arial, Noto Sans TC, Noto Sans, sans-serif",
+    "fontSize": "16px"
+  }
+}

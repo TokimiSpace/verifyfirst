@@ -1,0 +1,9 @@
+flowchart LR
+  N["Incident notice"] --> X["Extract likely environment-variable names"]
+  I["Enterprise inventories<br/>name or KEY=value"] --> K["Discard everything after ="]
+  X --> M["Name-only comparison"]
+  K --> M
+  M --> A["Revoke → reissue → deploy → review → verify"]
+  A --> O["Owner and completion time"]
+  O --> H["SHA-256 Evidence ID"]
+  H --> T["Local Trust Timeline"]

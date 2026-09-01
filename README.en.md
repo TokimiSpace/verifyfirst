@@ -43,59 +43,9 @@ documented below. Dependency update proposals are generated from the reviewed
 
 ### High-level component map
 
-~~~mermaid
-flowchart TB
-  subgraph Users["Users and enterprise systems"]
-    C["To C user"]
-    B["Enterprise operator"]
-    S["Enterprise API / LLM / chatbot"]
-  end
+> Diagrams are pre-rendered as static PNG files and do not depend on GitHub's Mermaid rich display. Click any image to open it at full size.
 
-  subgraph Browser["Browser: React 19 + TypeScript"]
-    R["index.tsx route split"]
-    TC["To C anti-scam UI"]
-    TB["To B enterprise lab"]
-    OCR["Local Tesseract.js OCR"]
-    LOCAL["Deterministic local services<br/>policy, hashing, CESR, incident matching"]
-    LS["localStorage<br/>enterprise summaries / timeline"]
-    DL["Local JSON downloads"]
-  end
-
-  subgraph API["Node.js 20 serverless API"]
-    ANALYZE["POST /api/analyze"]
-    POLICY["POST /api/agent-policy"]
-    X402["POST /api/x402-preflight"]
-    MEM["Bounded warm-instance<br/>cache and rate limits"]
-  end
-
-  subgraph External["External evidence and analysis"]
-    GEMINI["Google Gemini<br/>Search grounding"]
-    PUBLIC["RDAP / DNS / Safe Browsing<br/>VirusTotal / Cofacts / ScamSniffer"]
-    GLEIF["GLEIF Golden Copy API"]
-    IFF["ifandonlyif.io<br/>x402 evidence"]
-    SHEETS["Optional Google Sheets<br/>content-free metrics"]
-  end
-
-  C --> TC
-  B --> TB
-  S --> POLICY
-  S --> X402
-  R --> TC
-  R --> TB
-  TC --> OCR
-  TC --> ANALYZE
-  TB --> LOCAL
-  TB --> GLEIF
-  TB --> X402
-  TB --> POLICY
-  TB --> LS
-  TB --> DL
-  ANALYZE --> PUBLIC
-  ANALYZE --> GEMINI
-  ANALYZE --> MEM
-  ANALYZE -. "only when configured" .-> SHEETS
-  X402 --> IFF
-~~~
+[![VerifyFirst high-level system architecture](docs/diagrams/en/architecture.png)](docs/diagrams/en/architecture.png)
 
 ### Layer ownership
 
@@ -111,17 +61,7 @@ flowchart TB
 
 ### Trust boundary
 
-~~~mermaid
-flowchart LR
-  U["Caller-supplied input<br/>untrusted"] --> V["Size, type, URL, field,<br/>schema, and freshness validation"]
-  V --> D["Deterministic rules / cryptography"]
-  V --> E["External evidence"]
-  D --> P["Policy decision"]
-  E --> P
-  P --> H["Human review / enterprise backend"]
-  H --> X["Real business execution<br/>outside VerifyFirst"]
-  LLM["LLM explanation layer"] -. "may explain; cannot expand authority" .-> P
-~~~
+[![VerifyFirst trust boundary](docs/diagrams/en/trust-boundary.png)](docs/diagrams/en/trust-boundary.png)
 
 Caller input, external responses, CESR, x402 JSON, and historical localStorage
 are all treated as untrusted. Production execution remains outside
@@ -150,37 +90,7 @@ applies organization policy.
 
 ### 1. Personal anti-scam flow
 
-~~~mermaid
-sequenceDiagram
-  participant U as User
-  participant B as Browser
-  participant A as /api/analyze
-  participant P as Public evidence
-  participant G as Gemini
-  participant M as Warm memory
-
-  U->>B: Select incident stage and contact channel
-  U->>B: Paste text / URL / phone / account, or choose screenshot
-  B->>B: OCR screenshot locally; image stays in browser
-  B->>A: Normalized text, URL, or phone + language
-  A->>A: Type, length, URL, example, and rate-limit checks
-  A->>M: Check bounded 72-hour cache
-  alt Cache hit
-    M-->>A: Normalized result
-  else Cache miss
-    par Public fact checks
-      A->>P: RDAP / DNS / Safe Browsing / VirusTotal
-      A->>P: Cofacts query / ScamSniffer lists
-    and Model analysis
-      A->>G: User input + gathered facts + grounding instruction
-    end
-    A->>A: Blocklist floor, low-evidence normalization, PII masking
-    A->>M: Store in bounded warm-instance cache
-  end
-  A-->>B: Result, source state, degradation, actions
-  B->>B: Build stage-aware local safety conversation
-  B-->>U: Stop-loss, official verification, bank / 165 / reporting steps
-~~~
+[![Personal anti-scam information flow](docs/diagrams/en/consumer-flow.png)](docs/diagrams/en/consumer-flow.png)
 
 Key details:
 
@@ -206,29 +116,7 @@ Key details:
 
 ### 2. vLEI legal-entity and authority flow
 
-~~~mermaid
-sequenceDiagram
-  participant O as Enterprise operator
-  participant W as vLEI workspace
-  participant L as GLEIF API
-  participant V as Browser CESR verifier
-  participant T as Local Timeline
-  participant H as Enterprise backend / QVI
-
-  O->>W: Enter 20-character LEI
-  W->>L: Request official LEI record
-  L-->>W: Entity, status, Golden Copy provenance
-  O->>W: Paste/select CESR and choose production or fixture root
-  W->>V: Raw CESR in browser memory
-  V->>V: Framing, duplicate JSON keys, SAID, KEL signature
-  V->>V: ACDC edges, TEL anchor, registry ownership
-  V->>V: Official schemas, terminal LEI, trust root
-  V-->>W: Checks, credential summaries, source digest
-  W->>W: Compare terminal LEI with a GLEIF record under 15 minutes old
-  W->>T: Store summary, decision, and SHA-256 only
-  W-->>O: Unsigned Evidence JSON
-  O->>H: Production re-verification and organization policy
-~~~
+[![vLEI legal-entity and authority flow](docs/diagrams/en/vlei-flow.png)](docs/diagrams/en/vlei-flow.png)
 
 - Raw CESR is capped at 128 KiB and remains in browser memory.
 - The represented LEI comes only from the unique terminal credential.
@@ -241,33 +129,7 @@ sequenceDiagram
 
 ### 3. x402 payment-requirement preflight
 
-~~~mermaid
-sequenceDiagram
-  participant O as Finance / payments operator
-  participant W as x402 workspace
-  participant A as /api/x402-preflight
-  participant P as Local policy
-  participant I as ifandonlyif.io
-  participant E as Evidence export
-
-  O->>W: Endpoint + Payment-Required JSON
-  O->>W: network / asset / payee / maxAmount
-  W->>W: JSON, 64 KiB, x402 v2, and field validation
-  W->>A: Sanitized HTTPS endpoint + requirement + policy
-  A->>A: CORS, 96 KiB, rate limit, URL re-sanitization
-  A->>P: Evaluate up to 16 payment options independently
-  alt Local policy mismatch
-    P-->>A: HOLD_POLICY_MISMATCH
-    Note over A,I: IFF is not called
-  else Local policy match
-    A->>I: POST /api/v3/verify
-    I-->>A: consistent / diverged / stale / unobserved
-    A->>A: Recompute SDK 0.2 canonical fingerprints
-  end
-  A-->>W: Separate IFF evidence and policy decision in v2 response
-  W->>E: Unsigned SHA-256 Evidence JSON
-  E-->>O: NOT_BOUND / NOT_EXECUTED
-~~~
+[![x402 payment-requirement preflight flow](docs/diagrams/en/x402-flow.png)](docs/diagrams/en/x402-flow.png)
 
 The endpoint is an identifier only; credentials, query, and fragment are
 removed and the merchant endpoint is not fetched. A local policy mismatch
@@ -277,17 +139,7 @@ authorization. The platform never accepts keys, signs, pays, or settles.
 
 ### 4. Credential incident-response flow
 
-~~~mermaid
-flowchart LR
-  N["Incident notice"] --> X["Extract likely environment-variable names"]
-  I["Enterprise inventories<br/>name or KEY=value"] --> K["Discard everything after ="]
-  X --> M["Name-only comparison"]
-  K --> M
-  M --> A["Revoke → reissue → deploy → review → verify"]
-  A --> O["Owner and completion time"]
-  O --> H["SHA-256 Evidence ID"]
-  H --> T["Local Trust Timeline"]
-~~~
+[![Credential incident-response flow](docs/diagrams/en/incident-flow.png)](docs/diagrams/en/incident-flow.png)
 
 The notice body is not persisted. Secret values are discarded immediately.
 Environment references retain ID, label, and system, so two systems both named
@@ -302,16 +154,7 @@ audit bundle. The legacy <code>AgentSandbox</code> request runner is not mounted
 in either product surface, so the audit page must not be presented as a
 production tool-execution integration.
 
-~~~mermaid
-flowchart LR
-  G["Short-lived grant<br/>principal, purpose, target, expiry"] --> API["POST /api/agent-policy"]
-  R["Action request<br/>action, target, purpose, field names"] --> API
-  API --> V["Shape validation"]
-  V --> P["Deterministic policy<br/>ALLOW / CONFIRM / DENY"]
-  P --> E["SHA-256 Evidence Packet"]
-  E --> T["Trust Timeline"]
-  P --> H["Human confirmation when required"]
-~~~
+[![Agent policy-gate flow](docs/diagrams/en/agent-policy-flow.png)](docs/diagrams/en/agent-policy-flow.png)
 
 The client in <code>services/agentGateway.ts</code> fails closed when the server
 gate is unavailable in production; only localhost development may run the same

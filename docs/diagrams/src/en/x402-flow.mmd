@@ -1,0 +1,25 @@
+sequenceDiagram
+  participant O as Finance / payments operator
+  participant W as x402 workspace
+  participant A as /api/x402-preflight
+  participant P as Local policy
+  participant I as ifandonlyif.io
+  participant E as Evidence export
+
+  O->>W: Endpoint + Payment-Required JSON
+  O->>W: network / asset / payee / maxAmount
+  W->>W: JSON, 64 KiB, x402 v2, and field validation
+  W->>A: Sanitized HTTPS endpoint + requirement + policy
+  A->>A: CORS, 96 KiB, rate limit, URL re-sanitization
+  A->>P: Evaluate up to 16 payment options independently
+  alt Local policy mismatch
+    P-->>A: HOLD_POLICY_MISMATCH
+    Note over A,I: IFF is not called
+  else Local policy match
+    A->>I: POST /api/v3/verify
+    I-->>A: consistent / diverged / stale / unobserved
+    A->>A: Recompute SDK 0.2 canonical fingerprints
+  end
+  A-->>W: Separate IFF evidence and policy decision in v2 response
+  W->>E: Unsigned SHA-256 Evidence JSON
+  E-->>O: NOT_BOUND / NOT_EXECUTED

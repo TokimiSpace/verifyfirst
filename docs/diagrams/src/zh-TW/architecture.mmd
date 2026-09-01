@@ -1,0 +1,51 @@
+flowchart TB
+  subgraph Users["使用者與企業系統"]
+    C["To C 使用者"]
+    B["企業操作人員"]
+    S["企業 API／LLM／Chatbot"]
+  end
+
+  subgraph Browser["瀏覽器：React 19 + TypeScript"]
+    R["index.tsx 路由切分"]
+    TC["To C 反詐介面"]
+    TB["To B 企業實驗室"]
+    OCR["Tesseract.js 本機 OCR"]
+    LOCAL["本機確定性服務<br/>政策、雜湊、CESR、事件比對"]
+    LS["localStorage<br/>企業摘要／Timeline"]
+    DL["本機 JSON 下載"]
+  end
+
+  subgraph API["Node.js 20 Serverless API"]
+    ANALYZE["POST /api/analyze"]
+    POLICY["POST /api/agent-policy"]
+    X402["POST /api/x402-preflight"]
+    MEM["有界 warm-instance<br/>快取與 rate limit"]
+  end
+
+  subgraph External["外部證據與分析服務"]
+    GEMINI["Google Gemini<br/>Search grounding"]
+    PUBLIC["RDAP／DNS／Safe Browsing<br/>VirusTotal／Cofacts／ScamSniffer"]
+    GLEIF["GLEIF Golden Copy API"]
+    IFF["ifandonlyif.io<br/>x402 evidence"]
+    SHEETS["選配 Google Sheets<br/>無內容指標"]
+  end
+
+  C --> TC
+  B --> TB
+  S --> POLICY
+  S --> X402
+  R --> TC
+  R --> TB
+  TC --> OCR
+  TC --> ANALYZE
+  TB --> LOCAL
+  TB --> GLEIF
+  TB --> X402
+  TB --> POLICY
+  TB --> LS
+  TB --> DL
+  ANALYZE --> PUBLIC
+  ANALYZE --> GEMINI
+  ANALYZE --> MEM
+  ANALYZE -. "僅啟用時" .-> SHEETS
+  X402 --> IFF

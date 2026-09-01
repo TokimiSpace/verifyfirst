@@ -1,0 +1,9 @@
+flowchart LR
+  U["Caller-supplied input<br/>untrusted"] --> V["Size, type, URL, field,<br/>schema, and freshness validation"]
+  V --> D["Deterministic rules / cryptography"]
+  V --> E["External evidence"]
+  D --> P["Policy decision"]
+  E --> P
+  P --> H["Human review / enterprise backend"]
+  H --> X["Real business execution<br/>outside VerifyFirst"]
+  LLM["LLM explanation layer"] -. "may explain — cannot expand authority" .-> P

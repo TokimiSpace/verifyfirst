@@ -1,0 +1,29 @@
+sequenceDiagram
+  participant U as 使用者
+  participant B as 瀏覽器
+  participant A as /api/analyze
+  participant P as 公開證據服務
+  participant G as Gemini
+  participant M as Warm memory
+
+  U->>B: 選事件階段與管道
+  U->>B: 貼文字／URL／電話／帳號，或選截圖
+  B->>B: 截圖 OCR；圖片留在瀏覽器
+  B->>A: 正規化後的文字、URL 或電話 + 語言
+  A->>A: 型別、長度、URL、範例與 rate limit 檢查
+  A->>M: 查 72 小時有界快取
+  alt 快取命中
+    M-->>A: 已正規化結果
+  else 未命中
+    par 公開事實查核
+      A->>P: RDAP／DNS／Safe Browsing／VirusTotal
+      A->>P: Cofacts 摘要查詢／ScamSniffer 清單
+    and AI 分析
+      A->>G: 使用者輸入 + 已整理事實 + grounding 指示
+    end
+    A->>A: blocklist 下限、低證據正規化、PII masking
+    A->>M: 寫入有界 warm-instance 快取
+  end
+  A-->>B: 結果、來源狀態、降級層級與行動建議
+  B->>B: 依事件階段產生本機安全對話
+  B-->>U: 先停損、官方查證、銀行／165／報案步驟

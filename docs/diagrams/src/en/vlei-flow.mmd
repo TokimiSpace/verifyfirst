@@ -1,0 +1,21 @@
+sequenceDiagram
+  participant O as Enterprise operator
+  participant W as vLEI workspace
+  participant L as GLEIF API
+  participant V as Browser CESR verifier
+  participant T as Local Timeline
+  participant H as Enterprise backend / QVI
+
+  O->>W: Enter 20-character LEI
+  W->>L: Request official LEI record
+  L-->>W: Entity, status, Golden Copy provenance
+  O->>W: Paste/select CESR and choose production or fixture root
+  W->>V: Raw CESR in browser memory
+  V->>V: Framing, duplicate JSON keys, SAID, KEL signature
+  V->>V: ACDC edges, TEL anchor, registry ownership
+  V->>V: Official schemas, terminal LEI, trust root
+  V-->>W: Checks, credential summaries, source digest
+  W->>W: Compare terminal LEI with a GLEIF record under 15 minutes old
+  W->>T: Store summary, decision, and SHA-256 only
+  W-->>O: Unsigned Evidence JSON
+  O->>H: Production re-verification and organization policy

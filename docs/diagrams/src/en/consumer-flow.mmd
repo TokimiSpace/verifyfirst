@@ -1,0 +1,29 @@
+sequenceDiagram
+  participant U as User
+  participant B as Browser
+  participant A as /api/analyze
+  participant P as Public evidence
+  participant G as Gemini
+  participant M as Warm memory
+
+  U->>B: Select incident stage and contact channel
+  U->>B: Paste text / URL / phone / account, or choose screenshot
+  B->>B: OCR screenshot locally — image stays in browser
+  B->>A: Normalized text, URL, or phone + language
+  A->>A: Type, length, URL, example, and rate-limit checks
+  A->>M: Check bounded 72-hour cache
+  alt Cache hit
+    M-->>A: Normalized result
+  else Cache miss
+    par Public fact checks
+      A->>P: RDAP / DNS / Safe Browsing / VirusTotal
+      A->>P: Cofacts query / ScamSniffer lists
+    and Model analysis
+      A->>G: User input + gathered facts + grounding instruction
+    end
+    A->>A: Blocklist floor, low-evidence normalization, PII masking
+    A->>M: Store in bounded warm-instance cache
+  end
+  A-->>B: Result, source state, degradation, actions
+  B->>B: Build stage-aware local safety conversation
+  B-->>U: Stop-loss, official verification, bank / 165 / reporting steps

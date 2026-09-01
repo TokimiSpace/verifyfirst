@@ -1,0 +1,51 @@
+flowchart TB
+  subgraph Users["Users and enterprise systems"]
+    C["To C user"]
+    B["Enterprise operator"]
+    S["Enterprise API / LLM / chatbot"]
+  end
+
+  subgraph Browser["Browser: React 19 + TypeScript"]
+    R["index.tsx route split"]
+    TC["To C anti-scam UI"]
+    TB["To B enterprise lab"]
+    OCR["Local Tesseract.js OCR"]
+    LOCAL["Deterministic local services<br/>policy, hashing, CESR, incident matching"]
+    LS["localStorage<br/>enterprise summaries / timeline"]
+    DL["Local JSON downloads"]
+  end
+
+  subgraph API["Node.js 20 serverless API"]
+    ANALYZE["POST /api/analyze"]
+    POLICY["POST /api/agent-policy"]
+    X402["POST /api/x402-preflight"]
+    MEM["Bounded warm-instance<br/>cache and rate limits"]
+  end
+
+  subgraph External["External evidence and analysis"]
+    GEMINI["Google Gemini<br/>Search grounding"]
+    PUBLIC["RDAP / DNS / Safe Browsing<br/>VirusTotal / Cofacts / ScamSniffer"]
+    GLEIF["GLEIF Golden Copy API"]
+    IFF["ifandonlyif.io<br/>x402 evidence"]
+    SHEETS["Optional Google Sheets<br/>content-free metrics"]
+  end
+
+  C --> TC
+  B --> TB
+  S --> POLICY
+  S --> X402
+  R --> TC
+  R --> TB
+  TC --> OCR
+  TC --> ANALYZE
+  TB --> LOCAL
+  TB --> GLEIF
+  TB --> X402
+  TB --> POLICY
+  TB --> LS
+  TB --> DL
+  ANALYZE --> PUBLIC
+  ANALYZE --> GEMINI
+  ANALYZE --> MEM
+  ANALYZE -. "only when configured" .-> SHEETS
+  X402 --> IFF

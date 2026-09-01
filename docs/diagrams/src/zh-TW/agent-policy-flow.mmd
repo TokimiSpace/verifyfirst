@@ -1,0 +1,8 @@
+flowchart LR
+  G["短效 grant<br/>主體、目的、目標、期限"] --> API["POST /api/agent-policy"]
+  R["action request<br/>action、target、purpose、欄位名稱"] --> API
+  API --> V["格式驗證"]
+  V --> P["確定性政策<br/>ALLOW／CONFIRM／DENY"]
+  P --> E["Evidence Packet<br/>SHA-256"]
+  E --> T["Trust Timeline"]
+  P --> H["需要時由人類確認"]

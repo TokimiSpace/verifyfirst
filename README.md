@@ -45,59 +45,9 @@ To C 支援繁體中文、英文與越南文，先詢問事件進度，再查核
 
 ### 高階元件圖
 
-~~~mermaid
-flowchart TB
-  subgraph Users["使用者與企業系統"]
-    C["To C 使用者"]
-    B["企業操作人員"]
-    S["企業 API／LLM／Chatbot"]
-  end
+> 圖表已預先產生為靜態 PNG，不依賴 GitHub Mermaid rich display；點擊圖片可開啟原始尺寸。
 
-  subgraph Browser["瀏覽器：React 19 + TypeScript"]
-    R["index.tsx 路由切分"]
-    TC["To C 反詐介面"]
-    TB["To B 企業實驗室"]
-    OCR["Tesseract.js 本機 OCR"]
-    LOCAL["本機確定性服務<br/>政策、雜湊、CESR、事件比對"]
-    LS["localStorage<br/>企業摘要／Timeline"]
-    DL["本機 JSON 下載"]
-  end
-
-  subgraph API["Node.js 20 Serverless API"]
-    ANALYZE["POST /api/analyze"]
-    POLICY["POST /api/agent-policy"]
-    X402["POST /api/x402-preflight"]
-    MEM["有界 warm-instance<br/>快取與 rate limit"]
-  end
-
-  subgraph External["外部證據與分析服務"]
-    GEMINI["Google Gemini<br/>Search grounding"]
-    PUBLIC["RDAP／DNS／Safe Browsing<br/>VirusTotal／Cofacts／ScamSniffer"]
-    GLEIF["GLEIF Golden Copy API"]
-    IFF["ifandonlyif.io<br/>x402 evidence"]
-    SHEETS["選配 Google Sheets<br/>無內容指標"]
-  end
-
-  C --> TC
-  B --> TB
-  S --> POLICY
-  S --> X402
-  R --> TC
-  R --> TB
-  TC --> OCR
-  TC --> ANALYZE
-  TB --> LOCAL
-  TB --> GLEIF
-  TB --> X402
-  TB --> POLICY
-  TB --> LS
-  TB --> DL
-  ANALYZE --> PUBLIC
-  ANALYZE --> GEMINI
-  ANALYZE --> MEM
-  ANALYZE -. "僅啟用時" .-> SHEETS
-  X402 --> IFF
-~~~
+[![VerifyFirst 高階系統架構](docs/diagrams/zh-TW/architecture.png)](docs/diagrams/zh-TW/architecture.png)
 
 ### 分層責任
 
@@ -113,18 +63,7 @@ flowchart TB
 
 ### 信任邊界
 
-~~~mermaid
-flowchart LR
-  U["使用者提供的內容<br/>不受信任"] --> V["大小、格式、型別、URL 與欄位驗證"]
-  V --> D["確定性規則／密碼學驗證"]
-  V --> E["外部來源"]
-  D --> P["政策決策"]
-  E --> P
-  P --> H["人類覆核／企業後端"]
-  H --> X["真正的業務執行<br/>不在 VerifyFirst 內"]
-
-  LLM["LLM 說明層"] -. "可解釋，不可擴權" .-> P
-~~~
+[![VerifyFirst 信任邊界](docs/diagrams/zh-TW/trust-boundary.png)](docs/diagrams/zh-TW/trust-boundary.png)
 
 所有 caller-supplied 內容、外部 API 回應、CESR、x402 JSON 與歷史 localStorage 都視為不受信任資料。系統在進入判定前進行型別、長度、來源、時效與結構檢查；production 執行仍由 VerifyFirst 外部的受控系統完成。
 
@@ -150,37 +89,7 @@ flowchart LR
 
 ### 1. To C 個人反詐資訊流
 
-~~~mermaid
-sequenceDiagram
-  participant U as 使用者
-  participant B as 瀏覽器
-  participant A as /api/analyze
-  participant P as 公開證據服務
-  participant G as Gemini
-  participant M as Warm memory
-
-  U->>B: 選事件階段與管道
-  U->>B: 貼文字／URL／電話／帳號，或選截圖
-  B->>B: 截圖 OCR；圖片留在瀏覽器
-  B->>A: 正規化後的文字、URL 或電話 + 語言
-  A->>A: 型別、長度、URL、範例與 rate limit 檢查
-  A->>M: 查 72 小時有界快取
-  alt 快取命中
-    M-->>A: 已正規化結果
-  else 未命中
-    par 公開事實查核
-      A->>P: RDAP／DNS／Safe Browsing／VirusTotal
-      A->>P: Cofacts 摘要查詢／ScamSniffer 清單
-    and AI 分析
-      A->>G: 使用者輸入 + 已整理事實 + grounding 指示
-    end
-    A->>A: blocklist 下限、低證據正規化、PII masking
-    A->>M: 寫入有界 warm-instance 快取
-  end
-  A-->>B: 結果、來源狀態、降級層級與行動建議
-  B->>B: 依事件階段產生本機安全對話
-  B-->>U: 先停損、官方查證、銀行／165／報案步驟
-~~~
+[![To C 個人反詐資訊流](docs/diagrams/zh-TW/consumer-flow.png)](docs/diagrams/zh-TW/consumer-flow.png)
 
 詳細規則：
 
@@ -197,29 +106,7 @@ sequenceDiagram
 
 ### 2. vLEI 法人與代表權資訊流
 
-~~~mermaid
-sequenceDiagram
-  participant O as 企業操作人員
-  participant W as vLEI 工作台
-  participant L as GLEIF API
-  participant V as 瀏覽器 CESR verifier
-  participant T as Local Timeline
-  participant H as 企業後端／QVI
-
-  O->>W: 輸入 20 字元 LEI
-  W->>L: GET 官方 LEI record
-  L-->>W: 法人、狀態、Golden Copy provenance
-  O->>W: 貼上／選擇 CESR，選 production 或 fixture root
-  W->>V: 原始 CESR（只在記憶體）
-  V->>V: framing、重複 JSON key、SAID、KEL signature
-  V->>V: ACDC edges、TEL anchoring、registry ownership
-  V->>V: 官方 schema allowlist、terminal LEI、trust root
-  V-->>W: checks、credential summaries、source digest
-  W->>W: terminal LEI 對照 15 分鐘內 GLEIF record
-  W->>T: 僅保存摘要、decision 與 SHA-256
-  W-->>O: unsigned Evidence JSON
-  O->>H: production 復驗與組織政策
-~~~
+[![vLEI 法人與代表權資訊流](docs/diagrams/zh-TW/vlei-flow.png)](docs/diagrams/zh-TW/vlei-flow.png)
 
 重要邊界：
 
@@ -234,33 +121,7 @@ sequenceDiagram
 
 ### 3. x402 付款條件預檢資訊流
 
-~~~mermaid
-sequenceDiagram
-  participant O as 財務／支付操作人員
-  participant W as x402 工作台
-  participant A as /api/x402-preflight
-  participant P as 本地政策
-  participant I as ifandonlyif.io
-  participant E as Evidence export
-
-  O->>W: Endpoint + Payment-Required JSON
-  O->>W: network／asset／payee／maxAmount
-  W->>W: JSON、64 KiB、x402 v2 與欄位驗證
-  W->>A: sanitized HTTPS endpoint + requirement + policy
-  A->>A: CORS、96 KiB、rate limit、URL 再清理
-  A->>P: 逐一評估最多 16 個 payment options
-  alt 本地政策不符
-    P-->>A: HOLD_POLICY_MISMATCH
-    Note over A,I: 不呼叫 IFF
-  else 本地政策符合
-    A->>I: POST /api/v3/verify
-    I-->>A: consistent／diverged／stale／unobserved
-    A->>A: SDK 0.2 canonical fingerprint 再計算與比對
-  end
-  A-->>W: IFF evidence 與 policy decision 分離的 v2 response
-  W->>E: unsigned SHA-256 Evidence JSON
-  E-->>O: NOT_BOUND／NOT_EXECUTED
-~~~
+[![x402 付款條件預檢資訊流](docs/diagrams/zh-TW/x402-flow.png)](docs/diagrams/zh-TW/x402-flow.png)
 
 判定原則：
 
@@ -278,17 +139,7 @@ IFF 的完整 HTTP 契約、大小限制與失敗碼請見 [docs/IFF_COMPATIBILI
 
 ### 4. 憑證外洩應變資訊流
 
-~~~mermaid
-flowchart LR
-  N["事件公告文字"] --> X["抽取疑似環境變數名稱"]
-  I["企業環境清單<br/>名稱或 KEY=value"] --> K["立即丟棄 = 後的值"]
-  X --> M["依名稱比對"]
-  K --> M
-  M --> A["撤銷 → 重建 → 部署 → 查帳 → 驗證"]
-  A --> O["負責人與完成時間"]
-  O --> H["SHA-256 Evidence ID"]
-  H --> T["本機 Trust Timeline"]
-~~~
+[![憑證外洩應變資訊流](docs/diagrams/zh-TW/incident-flow.png)](docs/diagrams/zh-TW/incident-flow.png)
 
 - 公告原文用來抽取名稱、服務與嚴重度，但不寫入 workspace。
 - 企業可分環境輸入清單；即使貼入 <code>KEY=value</code>，程式只保留大寫 KEY，value 立即丟棄。
@@ -301,16 +152,7 @@ flowchart LR
 
 以下是獨立 API 的實際判定流程。現在的企業 audit 頁只提供 grant 政策編輯、撤銷、Timeline 與 audit 匯出；legacy <code>AgentSandbox</code> request runner 沒有掛載到產品介面，不能把 audit 頁誤認為已接上 production tool execution。
 
-~~~mermaid
-flowchart LR
-  G["短效 grant<br/>主體、目的、目標、期限"] --> API["POST /api/agent-policy"]
-  R["action request<br/>action、target、purpose、欄位名稱"] --> API
-  API --> V["格式驗證"]
-  V --> P["確定性政策<br/>ALLOW／CONFIRM／DENY"]
-  P --> E["Evidence Packet<br/>SHA-256"]
-  E --> T["Trust Timeline"]
-  P --> H["需要時由人類確認"]
-~~~
+[![Agent 政策閘門資訊流](docs/diagrams/zh-TW/agent-policy-flow.png)](docs/diagrams/zh-TW/agent-policy-flow.png)
 
 - grant 必須是 ACTIVE、未過期、未撤銷，且 agent、grant、purpose 與 target 對齊。
 - LOGIN、PAYMENT、REQUEST_OTP、DOWNLOAD_APP 等高風險 action 不會被模型放行。
