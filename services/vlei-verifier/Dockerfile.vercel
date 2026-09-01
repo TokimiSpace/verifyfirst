@@ -1,12 +1,16 @@
+# LIVE DEMO ONLY. This image deliberately runs the upstream verifier in test
+# mode for the public legacy pages. It is not a production verifier image.
 FROM weboftrust/keri:1.2.0-rc4
 
 ARG VLEI_VERIFIER_COMMIT=5850051b52dce24ed59eae486af76e7c73f6012c
+ARG VLEI_VERIFIER_ARCHIVE_SHA256=40bc4b8586d5ecd409937837d43de27aaf0940d49c24ba40d17c28d753bc385f
 
 ADD https://github.com/GLEIF-IT/vlei-verifier/archive/${VLEI_VERIFIER_COMMIT}.tar.gz /tmp/vlei-verifier.tar.gz
 
 WORKDIR /app
 
-RUN mkdir -p /app /tmp/verifyfirst \
+RUN echo "${VLEI_VERIFIER_ARCHIVE_SHA256}  /tmp/vlei-verifier.tar.gz" | sha256sum -c - \
+    && mkdir -p /app /tmp/verifyfirst \
     && python -c "import tarfile; tarfile.open('/tmp/vlei-verifier.tar.gz').extractall('/tmp/vlei-verifier')" \
     && cp -R /tmp/vlei-verifier/vlei-verifier-${VLEI_VERIFIER_COMMIT}/. /app/ \
     && pip install --no-cache-dir -r requirements.txt \
@@ -20,12 +24,17 @@ RUN patch -p1 < /tmp/0001-parse-http-port-as-integer.patch \
 RUN command -v verifier \
     && verifier server start --help
 
+# The legacy filename is retained for the deployed demo. It does not identify a
+# production-ready policy profile and is not an operator-configurable interface.
 COPY verifyfirst-production.json /app/scripts/keri/cf/verifyfirst-production.json
 
+# VERIFIER_ENV=production only makes the upstream middleware block the dynamic
+# root mutation endpoint. VERIFIER_MODE=test still disables request protections
+# required by a real deployment, and upstream state remains temporary.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
     PORT=80 \
-    VERIFIER_CONFIG_FILE=verifyfirst-production.json \
+    VERIFYFIRST_VLEI_PROFILE=live-demo-test-backend \
     VERIFY_ROOT_OF_TRUST=True \
     VERIFIER_MODE=test \
     VERIFIER_ENV=production \
@@ -34,4 +43,6 @@ ENV PYTHONUNBUFFERED=1 \
 
 EXPOSE 80
 
+# This fixed command is intentional for the public demo. Self-host production
+# must supply its own production-mode entrypoint, durable state and policy.
 ENTRYPOINT ["/keripy/venv/bin/verifier", "server", "start", "--http", "80", "--config-dir", "/app/scripts", "--config-file", "verifyfirst-production.json"]

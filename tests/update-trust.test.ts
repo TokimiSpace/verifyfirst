@@ -732,12 +732,13 @@ describe('Update Trust standalone page', () => {
 
   it('keeps the verification layers honest and cites GLEIF sources', () => {
     expect(page).toContain('witness receipts、即時 key state、duplicity');
-    expect(page).toContain('production verifier 預期拒絕');
+    expect(page).toContain('demo backend 預期拒絕');
+    expect(page).toContain('公開 Vercel URL 不是自架 production');
     expect(page).toContain('未寫入任何真實 KEL／TEL');
     expect(page).toContain('EGF 已經定義了什麼、還沒定義什麼、我們補上什麼');
     expect(page).toContain('Primary Document v1.2 · 2026-03-25');
     expect(page).toContain('https://www.gleif.org/en/organizational-identity/introducing-the-verifiable-lei-vlei/introducing-the-vlei-ecosystem-governance-framework');
-    expect(page).toContain('https://github.com/GLEIF-IT/vlei-trainings/tree/main/markdown');
+    expect(page).toContain('https://github.com/GLEIF-IT/vlei-trainings/tree/4af87dc13b3f145c4d078448b1d6ec5a1f4bef25/markdown');
     expect(page).toContain('https://www.gleif.org/en/newsroom/blog/why-ai-agents-need-verifiable-organizational-identity');
     expect(page).toContain('verifyfirst.update-trust-evidence.v1');
     expect(page).toContain("tel_scope: 'SUPPLIED_STREAM_SNAPSHOT_ONLY'");

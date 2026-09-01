@@ -289,7 +289,13 @@ export async function verifyEd25519(pubQb64, sigQb64Indexed, messageBytes) {
 }
 
 /* ------------------------------------------------------------- vLEI SCHEMA */
-// Official schema SAIDs published in https://github.com/GLEIF-IT/vLEI-schema (main).
+// Official schema SAIDs reproduced from this immutable upstream revision.
+export const VLEI_SCHEMA_SOURCE = Object.freeze({
+  repository: 'https://github.com/GLEIF-IT/vLEI-schema',
+  commit: '97850396f504bf8c4e19a42af3290e4b2618f50e',
+  rawBase: 'https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/97850396f504bf8c4e19a42af3290e4b2618f50e',
+  license: 'Apache-2.0',
+});
 export const VLEI_SCHEMAS = {
   EBfdlu8R27Fbx: { said: 'EBfdlu8R27Fbx-ehrqwImnK-8Cm79sqbAQ4MmvEAYqao', key: 'QVI', title: 'Qualified vLEI Issuer Credential', file: 'qualified-vLEI-issuer-vLEI-credential.json', issuer: 'GLEIF', issuee: 'QVI', edges: {}, edgeVariants: [[]], edgeOperators: {}, attributes: ['i', 'dt', 'LEI'] },
   ENPXp1vQzRF6J: { said: 'ENPXp1vQzRF6JwIuS-mp2U8Uf1MoADoP_GqQ62VsDZWY', key: 'LE', title: 'Legal Entity vLEI Credential', file: 'legal-entity-vLEI-credential.json', issuer: 'QVI', issuee: 'Legal Entity', edges: { qvi: 'EBfdlu8R27Fbx-ehrqwImnK-8Cm79sqbAQ4MmvEAYqao' }, edgeVariants: [['qvi']], edgeOperators: { qvi: null }, attributes: ['i', 'dt', 'LEI'] },
@@ -736,7 +742,7 @@ export async function verifyChain(messages, options = {}) {
   for (const acdc of acdcs) {
     const c = summarizeAcdc(acdc), checks = [];
     const schema = schemaBySaid(acdc.s), proposed = !schema && isProposedSchema(acdc.s);
-    checks.push({ id: 'schema', ok: !!schema || proposed, label: schema ? `Schema SAID pinned · ${schema.key}` : proposed ? 'Schema · PROPOSED (not GLEIF)' : 'Schema SAID unknown', detail: schema ? `${schema.title} — GLEIF-IT/vLEI-schema main` : proposed ? AGENT_DELEGATION_SCHEMA.title : acdc.s });
+    checks.push({ id: 'schema', ok: !!schema || proposed, label: schema ? `Schema SAID pinned · ${schema.key}` : proposed ? 'Schema · PROPOSED (not GLEIF)' : 'Schema SAID unknown', detail: schema ? `${schema.title} — GLEIF-IT/vLEI-schema @ ${VLEI_SCHEMA_SOURCE.commit.slice(0, 12)}` : proposed ? AGENT_DELEGATION_SCHEMA.title : acdc.s });
     if (schema) {
       const shapeErrors = [];
       const requiredTopLevel = new Set(['v', 'a', ...(VLEI_TOP_LEVEL_REQUIRED[schema.key] || [])]);

@@ -128,17 +128,40 @@ export type IffX402PreflightStatus = 'VERIFIED' | 'INVALID_REQUIREMENT' | 'UNAVA
 
 export interface IffX402Preflight {
   provider: 'ifandonlyif.io';
+  evidenceBaseUrl?: string;
+  evidenceSource: 'IFF_PUBLIC_API' | 'IFF_CUSTOM_API' | 'SIMULATED' | 'UNAVAILABLE';
   status: IffX402PreflightStatus;
   verdict?: IffX402Verdict;
   divergenceKind?: 'amount_only' | 'payee';
   matchesLastObserved?: boolean;
   known?: boolean;
   ownershipStatus?: string;
+  ownershipMethod?: string;
+  ownershipVerifiedAt?: string;
   observedAt?: string;
   stableSince?: string;
   monitorId?: string;
+  monitorPublicKey?: string;
+  monitorSignature?: string;
   reportHash?: string;
+  receivedFingerprint?: string;
+  receivedOptionFingerprints?: string[];
+  observedFingerprint?: string;
+  observedOptionFingerprints?: string[];
+  unmatchedReceivedOptions?: string[];
+  history?: Array<{ setFingerprint: string; firstSeen: string; lastSeen: string; observations: number }>;
   inclusionAvailable: boolean;
+  inclusionTreeSize?: number;
+  inclusionLogIndex?: number;
+  inclusionAuditPath?: string[];
+  inclusionSignedTreeHead?: {
+    logId: string;
+    treeSize: number;
+    timestamp: string;
+    rootHash: string;
+    signature: string;
+    publicKey: string;
+  };
   disclaimer?: string;
   errorCode?: string;
 }
@@ -329,13 +352,13 @@ export interface TrustTimelineEvent {
 
 // Browser-side enterprise verification summaries. Raw credentials are kept
 // in memory only and are deliberately excluded from the persisted workspace.
-export type EnterpriseVerificationKind = 'LEI_LOOKUP' | 'VLEI_CHAIN';
+export type EnterpriseVerificationKind = 'LEI_LOOKUP' | 'VLEI_CHAIN' | 'X402_PREFLIGHT';
 
 export interface EnterpriseVerificationRecord {
   id: string;
   kind: EnterpriseVerificationKind;
   source: string;
-  trustDomain: 'GLEIF_GOLDEN_COPY' | 'GLEIF_PRODUCTION' | 'GLEIF_TEST_FIXTURE';
+  trustDomain: 'GLEIF_GOLDEN_COPY' | 'GLEIF_PRODUCTION' | 'GLEIF_TEST_FIXTURE' | 'IFF_PUBLIC_EVIDENCE' | 'IFF_CUSTOM_EVIDENCE' | 'IFF_UNAVAILABLE' | 'LOCAL_X402_SIMULATION';
   subject: string;
   decision: string;
   checkedAt: string;

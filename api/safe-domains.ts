@@ -1,215 +1,88 @@
-// Self + known-safe-domain short-circuit.
+// Operator-maintained official-domain identity hints.
 //
-// Why: keyword-based detectors in the pipeline (agent sandbox, risk-signal
-// regex, VirusTotal false-positives) can flag legitimate sites that discuss
-// scam terminology for educational purposes. Most critically, verify1st.tw
-// itself contains words like "付款", "投資", "LINE" in its copy — and so the
-// analyzer classifies its own site as high-risk.
-//
-// This module hard-codes a minimal allowlist of known-safe domains and
-// returns a canned verified response for them, bypassing Gemini + side
-// services entirely.
+// These entries answer only "which public hostname does this deployment claim
+// as its own?" They are not security verdicts, do not cover arbitrary
+// subdomains, and must never bypass the normal evidence pipeline or influence a
+// safety score by themselves.
 
 import type { Language } from '../types';
 
-const SAFE_DOMAINS: Array<{
+export interface OfficialDomainIdentity {
+  hostname: string;
+  canonicalDomain: string;
+  label: string;
+  source: 'OPERATOR_CONFIG';
+  limitation: string;
+}
+
+const OFFICIAL_DOMAINS: Array<{
   domain: string;
   aliases?: string[];
   label: Record<Language, string>;
-  description: Record<Language, string>;
+  limitation: Record<Language, string>;
 }> = [
   {
     domain: 'verify1st.tw',
     aliases: ['www.verify1st.tw'],
     label: {
-      en: 'VerifyFirst AI — Official Site',
-      'zh-TW': 'VerifyFirst AI — 官方網站',
-      vi: 'VerifyFirst AI — Trang chính thức',
+      en: 'VerifyFirst — operator-listed official domain',
+      'zh-TW': 'VerifyFirst — 營運者列出的官方網域',
+      vi: 'VerifyFirst — tên miền chính thức do đơn vị vận hành công bố',
     },
-    description: {
-      en: 'This is the official VerifyFirst AI site — the very tool you are using to check suspicious content. It is safe to use.',
-      'zh-TW': '這是 VerifyFirst AI 的官方網站 — 也就是您正在使用的安全驗證工具本身,可以安心使用。',
-      vi: 'Đây là trang chính thức của VerifyFirst AI — chính là công cụ bạn đang dùng để kiểm tra nội dung đáng ngờ. An toàn để sử dụng.',
-    },
-  },
-  {
-    domain: 'tokimi.space',
-    aliases: ['www.tokimi.space'],
-    label: {
-      en: 'tokimi.space — Creator Site',
-      'zh-TW': 'tokimi.space — 開發者網站',
-      vi: 'tokimi.space — Trang của nhà phát triển',
-    },
-    description: {
-      en: 'The personal site of tokimi, the creator of VerifyFirst AI.',
-      'zh-TW': 'VerifyFirst AI 開發者 tokimi 的個人網站。',
-      vi: 'Trang cá nhân của tokimi, người tạo ra VerifyFirst AI.',
-    },
-  },
-  {
-    domain: 'pay.tokimi.space',
-    label: {
-      en: 'tokimi Pay — Official Payment Service',
-      'zh-TW': 'tokimi Pay — 官方支付服務',
-      vi: 'tokimi Pay — Dịch vụ thanh toán chính thức',
-    },
-    description: {
-      en: 'Official payment service operated by tokimi. Verified safe.',
-      'zh-TW': '由 tokimi 營運的官方支付服務,已驗證安全。',
-      vi: 'Dịch vụ thanh toán chính thức do tokimi vận hành. Đã xác minh an toàn.',
-    },
-  },
-  {
-    domain: 'ifandonlyif.io',
-    aliases: ['www.ifandonlyif.io'],
-    label: {
-      en: 'ifandonlyif.io — Official Site',
-      'zh-TW': 'ifandonlyif.io — 官方網站',
-      vi: 'ifandonlyif.io — Trang chính thức',
-    },
-    description: {
-      en: 'Official site of ifandonlyif.io. Verified safe.',
-      'zh-TW': 'ifandonlyif.io 官方網站,已驗證安全。',
-      vi: 'Trang chính thức của ifandonlyif.io. Đã xác minh an toàn.',
-    },
-  },
-  {
-    domain: 'bridgetime.org',
-    aliases: ['www.bridgetime.org'],
-    label: {
-      en: 'bridgetime.org — Official Site',
-      'zh-TW': 'bridgetime.org — 官方網站',
-      vi: 'bridgetime.org — Trang chính thức',
-    },
-    description: {
-      en: 'Official site of bridgetime.org. Verified safe.',
-      'zh-TW': 'bridgetime.org 官方網站,已驗證安全。',
-      vi: 'Trang chính thức của bridgetime.org. Đã xác minh an toàn.',
+    limitation: {
+      en: 'Identity hint only. It does not prove that the current page is safe, uncompromised, or appropriate for a transaction.',
+      'zh-TW': '這只識別營運者列出的網域，不證明目前頁面安全、未遭入侵或適合進行交易。',
+      vi: 'Đây chỉ là gợi ý nhận diện tên miền; không chứng minh trang hiện tại an toàn, chưa bị xâm nhập hoặc phù hợp để giao dịch.',
     },
   },
 ];
 
-const DOMAIN_MAP: Map<string, typeof SAFE_DOMAINS[number]> = new Map();
-for (const entry of SAFE_DOMAINS) {
+const DOMAIN_MAP = new Map<string, typeof OFFICIAL_DOMAINS[number]>();
+for (const entry of OFFICIAL_DOMAINS) {
   DOMAIN_MAP.set(entry.domain.toLowerCase(), entry);
-  for (const alias of entry.aliases ?? []) {
-    DOMAIN_MAP.set(alias.toLowerCase(), entry);
-  }
+  for (const alias of entry.aliases ?? []) DOMAIN_MAP.set(alias.toLowerCase(), entry);
 }
 
-function hostnameOf(url: string): string | null {
+const resolveHost = (input: string): string | null => {
+  const trimmed = input.trim();
+  if (!trimmed || /\s/.test(trimmed)) return null;
   try {
-    return new URL(url).hostname.toLowerCase();
+    const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    return new URL(candidate).hostname.toLowerCase().replace(/\.+$/, '');
   } catch {
     return null;
   }
-}
+};
 
-// Resolve the hostname from either a full URL (https://verify1st.tw/...) or a
-// bare domain string pasted without a protocol (verify1st.tw). Anything with
-// whitespace or non-domain characters returns null.
-function resolveHost(input: string): string | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  const direct = hostnameOf(trimmed);
-  if (direct) return direct;
-  // Only retry if the input looks like a single token that could be a bare domain.
-  if (/\s/.test(trimmed)) return null;
-  return hostnameOf(`https://${trimmed}`);
-}
+export function getOfficialDomainIdentity(input: string, language: string): OfficialDomainIdentity | null {
+  const hostname = resolveHost(input);
+  if (!hostname) return null;
 
-function matchAllowlist(host: string): typeof SAFE_DOMAINS[number] | undefined {
-  if (DOMAIN_MAP.has(host)) return DOMAIN_MAP.get(host);
-  const parts = host.split('.');
-  for (let i = 0; i < parts.length - 1; i++) {
-    const suffix = parts.slice(i).join('.');
-    if (DOMAIN_MAP.has(suffix)) return DOMAIN_MAP.get(suffix);
-  }
-  return undefined;
-}
-
-export function isKnownSafeUrl(url: string): boolean {
-  const host = resolveHost(url);
-  if (!host) return false;
-  return !!matchAllowlist(host);
-}
-
-export function getSafeResponse(url: string, language: string): any | null {
-  const host = resolveHost(url);
-  if (!host) return null;
-  const entry = matchAllowlist(host);
+  // Exact host/alias match only. An operator-listed apex must not implicitly
+  // endorse user-controlled, delegated, or compromised subdomains.
+  const entry = DOMAIN_MAP.get(hostname);
   if (!entry) return null;
-
-  // Normalize to a canonical URL for display so bare-domain and with-protocol
-  // inputs produce identical output.
-  const canonicalUrl = url.startsWith('http://') || url.startsWith('https://')
-    ? url
-    : `https://${host}`;
 
   const lang = (['en', 'zh-TW', 'vi'] as const).includes(language as Language)
     ? (language as Language)
     : 'en';
-
   return {
-    handle: '',
-    displayName: entry.label[lang],
-    bioSummary: entry.description[lang],
-    identityStatus: 'OFFICIAL_PROJECT',
-    trustScore: 98,
-    verdict: entry.description[lang],
-    engagementQuality: 'ORGANIC',
-    credibilityStrengths: [
-      lang === 'zh-TW' ? '已驗證的官方網站' : lang === 'vi' ? 'Trang chính thức đã xác minh' : 'Verified official site',
-    ],
-    riskFactors: [],
-    history: [],
-    inputType: 'URL',
-    originalInput: url,
-    normalizedInput: { url: canonicalUrl, domain: host.replace(/^www\./, '') },
-    scamProbability: 2,
-    riskSignals: [],
-    suggestedActions: [{
-      label: lang === 'zh-TW' ? '✅ 可以安心使用' : lang === 'vi' ? '✅ An toàn để sử dụng' : '✅ Safe to Use',
-      type: 'VERIFY',
-      priority: 1,
-    }],
-    seniorModeVerdict: lang === 'zh-TW'
-      ? '✅ 這是官方認證的網站,可以安心使用。'
-      : lang === 'vi'
-      ? '✅ Đây là trang chính thức đã xác minh, an toàn để sử dụng.'
-      : '✅ This is a verified official site. Safe to use.',
-    agentVerification: {
-      status: 'NOT_RUN',
-      redirectChain: [],
-      forms: [],
-      ctaButtons: [],
-      asksForLogin: false,
-      asksForOtp: false,
-      asksForPayment: false,
-      asksForAppDownload: false,
-      asksToAddChat: false,
-      screenshots: [],
-      riskObservations: [],
-    },
-    officialRoute: {
-      status: 'OFFICIAL_CONFIRMED',
-      label: entry.domain,
-      url: `https://${entry.domain}`,
-      rationale: entry.description[lang],
-      lane: 'CORROBORATED',
-    },
-    primaryActions: [],
-    likelyLosses: [],
-    trustSummary: [{
-      label: lang === 'zh-TW' ? '官方入口' : lang === 'vi' ? 'Kênh chính thức' : 'Official site',
-      value: 'OFFICIAL_CONFIRMED',
-      lane: 'CORROBORATED',
-    }],
-    groundedSearch: false,
-    finalVerdict: 'A_MARKETING',
-    conclusion: entry.description[lang],
-    lastAnalyzed: new Date().toISOString(),
-    source: 'verified_safe',
-    degradation: { level: 'L0', score: 0, services: [] },
+    hostname,
+    canonicalDomain: entry.domain,
+    label: entry.label[lang],
+    source: 'OPERATOR_CONFIG',
+    limitation: entry.limitation[lang],
   };
+}
+
+export function buildOfficialDomainIdentityFacts(identity: OfficialDomainIdentity | null): string {
+  if (!identity) return '';
+  return [
+    '=== OPERATOR-CONFIGURED DOMAIN IDENTITY (IDENTITY ONLY; NOT SAFETY EVIDENCE) ===',
+    `- Listed hostname: ${identity.hostname}`,
+    `- Identity label: ${identity.label}`,
+    `- Limitation: ${identity.limitation}`,
+    '- This hint MUST NOT raise a trust score, lower scam probability, suppress risk evidence, or replace independent checks.',
+    '=== END OPERATOR-CONFIGURED DOMAIN IDENTITY ===',
+  ].join('\n');
 }

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VerifyFirst 資料處理說明</title>
+  <meta name="description" content="VerifyFirst 的輸入、第三方查核、暫存、OCR 與自架資料邊界。">
+  <style>
+    :root{color-scheme:dark;--page:#0b1117;--card:#111a23;--line:#263541;--ink:#f4f7f7;--muted:#afbcc5;--accent:#62d5c0;--warn:#f2c14e}*{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--muted);font:16px/1.7 system-ui,-apple-system,"Noto Sans TC",sans-serif}main{width:min(880px,calc(100% - 32px));margin:auto;padding:48px 0 80px}a{color:var(--accent)}header{padding-bottom:28px;border-bottom:1px solid var(--line)}.mark{display:inline-flex;align-items:center;gap:9px;color:var(--ink);font-weight:750;text-decoration:none}.mark span{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--accent);border-radius:8px;color:var(--accent)}h1{margin:34px 0 10px;color:var(--ink);font-size:clamp(2rem,6vw,3.4rem);line-height:1.08}h2{margin:34px 0 10px;color:var(--ink);font-size:1.25rem}p,li{max-width:76ch}.lead{font-size:1.08rem}.notice{margin:24px 0;padding:16px 18px;border:1px solid #6d5b2b;border-radius:12px;background:#201c12;color:#ead9a9}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:20px 0}.card{padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--card)}.card h2{margin-top:0}.tag{display:inline-block;margin-top:22px;color:var(--accent);font:700 12px/1.2 ui-monospace,monospace;letter-spacing:.12em}code{color:#c8e5df}footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);font-size:.9rem}@media(max-width:680px){main{padding-top:28px}.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <a class="mark" href="/"><span>V1</span>VerifyFirst</a>
+    <div class="tag">DATA PROCESSING NOTICE · 2026-09-01</div>
+    <h1>送出前，先知道資料會去哪裡。</h1>
+    <p class="lead">這份說明對應此開源版 VerifyFirst 的預設程式行為。請勿輸入密碼、OTP、完整卡號或證件號碼、助記詞、錢包私鑰或 API 金鑰。</p>
+  </header>
+
+  <div class="notice">自架者是自己部署環境的資料處理者，可更換供應商、關閉整合或改變保留方式；上線前應根據實際設定發布自己的法律文件。這份開源說明不取代部署者的法律義務。</div>
+
+  <section class="grid">
+    <article class="card"><h2>To C 反詐輸入</h2><p>送出的文字、OCR 擷取文字或 URL 會到 VerifyFirst API、Gemini，並依部署者啟用的設定送到公開查核服務，例如 Safe Browsing、VirusTotal、Cofacts、RDAP 與 DNS。</p></article>
+    <article class="card"><h2>截圖與檔案</h2><p>圖片 OCR 在瀏覽器執行；第一次使用時，Tesseract 可能自預設 CDN 下載 worker、core 與語言資料。圖片本身不送到 VerifyFirst API，但擷取後文字會成為查核輸入。To B 文件只在本機計算 SHA-256，下載包不含內容。</p></article>
+    <article class="card"><h2>暫存與限流</h2><p>分析結果可在伺服器單一暖實例的有界記憶體中保留最長 72 小時。IP 只以雜湊後的暖實例限流鍵使用。專案預設不使用 Blob 或共用持久快取。</p></article>
+    <article class="card"><h2>選用處理</h2><p>Vercel Analytics 預設關閉。Google Sheets webhook 若由部署者啟用，只傳送不含使用者輸入與證據原文的統計欄位。URL 內容觀測預設關閉，需由伺服器明確啟用。</p></article>
+  </section>
+
+  <h2>企業實驗室</h2>
+  <p>vLEI 的原始 CESR 在瀏覽器記憶體預檢；GLEIF 查詢傳送 20 字元 LEI。x402 LIVE 會將清除 URL 帳密、query 與 fragment 後的 endpoint 識別字、Payment-Required 及企業政策送至 VerifyFirst API，再交給 IFF 比對。VerifyFirst 不接收錢包私鑰、不簽名、不付款。Simulation 不連線 IFF。</p>
+
+  <h2>安全與選擇</h2>
+  <ul>
+    <li>若不希望內容進入第三方服務，請勿送出 To C 分析；可使用不連線的企業 simulation 與本機雜湊功能。</li>
+    <li>專案沒有使用者帳號，也沒有帳號資料庫可供刪除。暖實例資料會在重啟或最長保留時間後失效。</li>
+    <li>敏感的安全或隱私問題請使用 GitHub 的 <a href="https://github.com/topben/cryptotruth/security/advisories/new">private vulnerability reporting</a>；公開 issue 請勿夾帶個人資料。</li>
+  </ul>
+
+  <h2>English / Tiếng Việt</h2>
+  <p><strong>English:</strong> Submitted text, extracted OCR text, or URLs may be processed by the VerifyFirst API, Gemini, and enabled public-check providers, with bounded warm-instance caching for up to 72 hours. Do not submit credentials or identity secrets. Self-hosters must publish a notice that matches their own configuration.</p>
+  <p><strong>Tiếng Việt:</strong> Văn bản, văn bản OCR hoặc URL đã gửi có thể được xử lý bởi API VerifyFirst, Gemini và các dịch vụ kiểm tra công khai đã bật; bộ nhớ tạm có giới hạn tối đa 72 giờ. Không gửi thông tin đăng nhập hoặc bí mật danh tính. Người tự lưu trữ phải công bố thông báo phù hợp với cấu hình của mình.</p>
+
+  <footer><a href="/">← 回 VerifyFirst</a> · <a href="https://github.com/topben/cryptotruth">Source code</a> · <a href="/business/">Enterprise lab</a></footer>
+</main>
+</body>
+</html>

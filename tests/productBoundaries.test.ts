@@ -8,6 +8,12 @@ const business = read('apps/business/BusinessApp.tsx');
 const entry = read('index.tsx');
 const intake = read('components/consumer/SituationIntake.tsx');
 const assistant = read('components/consumer/SafetyAssistant.tsx');
+const x402Workbench = read('components/business/X402Workbench.tsx');
+const x402Api = read('api/x402-preflight.ts');
+const x402Policy = read('services/x402Policy.ts');
+const vleiIntake = read('components/business/VleiImplementationIntake.tsx');
+const documentManifest = read('services/localDocumentManifest.ts');
+const vleiHandoff = read('services/vleiHandoff.ts');
 const boundaries = read('docs/PRODUCT_BOUNDARIES.md');
 const trustPathways = read('public/trust-pathways/index.html');
 const updateTrust = read('public/update-trust/index.html');
@@ -44,11 +50,48 @@ describe('To C / To B product boundaries', () => {
     expect(business).toContain('href="/trust-pathways/"');
     expect(business).toContain('href="/update-trust/"');
     expect(business).toContain('<TrustVerificationPanel');
+    expect(business).toContain('<X402Workbench');
+    expect(business).toContain("url.searchParams.set('module', 'vlei')");
+    expect(business).toContain("url.searchParams.set('module', 'x402')");
+    expect(business).not.toContain('<AgentSandbox');
     expect(business).toContain('verificationRecords={verificationRecords}');
     expect(trustPathways).toContain('EXPERIMENTAL');
     expect(updateTrust).toContain('EXPERIMENTAL');
     expect(trustPathways).toContain('href="/business/"');
     expect(updateTrust).toContain('href="/business/"');
+  });
+
+  it('keeps vLEI authority and x402 payment evidence as separate enterprise products', () => {
+    expect(business).toContain('組織身分與代表權');
+    expect(business).toContain('機器付款條件預檢');
+    expect(x402Workbench).toContain('schema: X402_EVIDENCE_SCHEMA');
+    expect(x402Api).toContain("X402_EVIDENCE_SCHEMA = 'verifyfirst.x402-preflight.v1'");
+    expect(x402Workbench).toContain("payment: 'NOT_EXECUTED'");
+    expect(x402Workbench).toContain('未自動改用模擬結果');
+    expect(x402Api).toContain('merchantEndpointFetched: false');
+    expect(x402Api).not.toContain('fetch(endpoint');
+    expect(x402Policy).toContain("selectedOptionBinding: 'NOT_BOUND'");
+    expect(x402Policy).toContain("paymentExecution: 'NOT_EXECUTED'");
+  });
+
+  it('offers guided adoption and machine-readable integration without making the LLM a verifier', () => {
+    expect(business).toContain('引導導入');
+    expect(business).toContain('技術整合');
+    expect(business).toContain("selectView('X402', undefined, 'simulation')");
+    expect(business).toContain("selectView('VLEI', 'VLEI')");
+    expect(boundaries).toContain('The model is not the verifier');
+    expect(boundaries).toContain('secret-free Evidence');
+  });
+
+  it('creates a local vLEI handoff manifest without uploading document contents', () => {
+    expect(vleiIntake).toContain('buildVleiHandoff');
+    expect(vleiHandoff).toContain("VLEI_HANDOFF_SCHEMA = 'verifyfirst.vlei-handoff.v1'");
+    expect(vleiHandoff).toContain("submissionStatus: 'DRAFT_NOT_SUBMITTED'");
+    expect(vleiHandoff).toContain('uploaded: false');
+    expect(vleiHandoff).toContain('contentIncluded: false');
+    expect(documentManifest).toContain('MAX_LOCAL_DOCUMENT_FILES = 12');
+    expect(documentManifest).toContain('createLocalDocumentManifest');
+    expect(documentManifest).not.toContain('objectUrl');
   });
 
   it('keeps raw CESR in memory while persisting verification summaries only', () => {

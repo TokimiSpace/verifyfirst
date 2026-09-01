@@ -5,10 +5,11 @@ node_modules
 dist
 dist-ssr
 
-# Environment variables
-.env
-.env.local
-.env.*.local
+# Environment variables (keep only the documented placeholder tracked)
+.env*
+!.env.example
+.envrc
+.direnv/
 *.local
 
 # Logs
@@ -37,8 +38,15 @@ Thumbs.db
 # Vercel
 .vercel
 
-# Debug
+# Private keys and common credential bundles
 *.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+service-account*.json
+*-service-account.json
 
 # Competition materials (local only)
 給參賽者的資料/

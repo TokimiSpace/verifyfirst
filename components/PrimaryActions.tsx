@@ -11,15 +11,15 @@ interface PrimaryActionsProps {
 
 const LABELS = {
   en: {
-    official: 'Go to the correct official entry',
+    official: 'Verify the official-route candidate',
     report: 'Report this suspicious content now',
   },
   'zh-TW': {
-    official: '改走正確官方入口',
+    official: '核對官方入口候選',
     report: '立即回報這則可疑內容',
   },
   vi: {
-    official: 'Đi theo lối vào chính thức',
+    official: 'Kiểm tra ứng viên lối vào chính thức',
     report: 'Báo cáo nội dung đáng ngờ ngay',
   },
 };

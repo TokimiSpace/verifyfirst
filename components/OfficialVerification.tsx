@@ -11,19 +11,19 @@ const COPY = {
   en: {
     title: 'Official route resolution',
     confirmed: 'Confirmed official entry',
-    candidate: 'High-confidence official candidate',
+    candidate: 'Possible official route — verify independently',
     unknown: 'Could not confidently confirm an official route',
   },
   'zh-TW': {
     title: '官方入口解析',
     confirmed: '已確認官方入口',
-    candidate: '高可信官方入口候選',
+    candidate: '可能的官方入口，仍需獨立核對',
     unknown: '無法高可信確認官方入口',
   },
   vi: {
     title: 'Đường dẫn chính thức',
     confirmed: 'Đã xác nhận lối vào chính thức',
-    candidate: 'Ứng viên chính thức độ tin cậy cao',
+    candidate: 'Có thể là lối vào chính thức — cần kiểm tra độc lập',
     unknown: 'Không thể xác nhận chắc chắn lối vào chính thức',
   },
 };

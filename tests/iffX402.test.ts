@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { VerifyRequestError, type PaymentRequiredEnvelope, type VerifyResult } from '@ifandonlyif/x402-preflight';
-import { preflightX402Response } from '../services/iffX402';
+import { preflightX402Response, verifyX402Requirement } from '../services/iffX402';
 
 const paymentRequired: PaymentRequiredEnvelope = {
   x402Version: 2,
@@ -50,6 +50,22 @@ const verifyResult = (verdict: VerifyResult['verdict']): VerifyResult => ({
 const encodedRequirement = () => Buffer.from(JSON.stringify(paymentRequired), 'utf8').toString('base64');
 
 describe('IFF x402 preflight integration', () => {
+  it('accepts a validated requirement directly for enterprise intake', async () => {
+    const verifyFn = vi.fn(async () => verifyResult('unobserved'));
+    const result = await verifyX402Requirement(
+      'https://merchant.example/quote?private=session',
+      paymentRequired,
+      { verifyFn },
+    );
+
+    expect(result).toMatchObject({ status: 'VERIFIED', verdict: 'unobserved' });
+    expect(verifyFn).toHaveBeenCalledWith(
+      'https://merchant.example/quote',
+      paymentRequired,
+      expect.any(Object),
+    );
+  });
+
   it('ignores non-402 responses without calling IFF', async () => {
     const verifyFn = vi.fn();
     const result = await preflightX402Response(
@@ -77,12 +93,24 @@ describe('IFF x402 preflight integration', () => {
 
     expect(result).toMatchObject({
       provider: 'ifandonlyif.io',
+      evidenceBaseUrl: 'https://ifandonlyif.io',
+      evidenceSource: 'IFF_PUBLIC_API',
       status: 'VERIFIED',
       verdict: 'consistent',
       ownershipStatus: 'verified',
       monitorId: 'iff-monitor-1',
+      monitorPublicKey: 'public-key',
+      monitorSignature: 'signature',
       reportHash: 'report-hash',
       inclusionAvailable: true,
+      inclusionSignedTreeHead: {
+        logId: 'iff-log',
+        treeSize: 7,
+        timestamp: '2026-08-29T06:00:01.000Z',
+        rootHash: 'root-hash',
+        signature: 'sth-signature',
+        publicKey: 'sth-public-key',
+      },
     });
     expect(verifyFn).toHaveBeenCalledTimes(1);
   });
@@ -143,9 +171,120 @@ describe('IFF x402 preflight integration', () => {
 
     expect(result).toEqual({
       provider: 'ifandonlyif.io',
+      evidenceBaseUrl: 'https://ifandonlyif.io',
+      evidenceSource: 'UNAVAILABLE',
       status: 'UNAVAILABLE',
       inclusionAvailable: false,
       errorCode: 'IFF_HTTP_429',
+    });
+  });
+
+  it('rejects an unrecognized IFF verdict instead of treating untrusted JSON as verified', async () => {
+    const result = await verifyX402Requirement(
+      'https://merchant.example/quote',
+      paymentRequired,
+      { verifyFn: async () => ({ ...verifyResult('consistent'), verdict: 'safe' }) as never },
+    );
+
+    expect(result).toEqual({
+      provider: 'ifandonlyif.io',
+      evidenceBaseUrl: 'https://ifandonlyif.io',
+      evidenceSource: 'UNAVAILABLE',
+      status: 'UNAVAILABLE',
+      inclusionAvailable: false,
+      errorCode: 'IFF_INVALID_RESPONSE',
+    });
+  });
+
+  it('rejects an IFF response missing required evidence shapes', async () => {
+    const invalid = { ...verifyResult('consistent'), received: { set_fingerprint: 'only-set' } };
+    const result = await verifyX402Requirement(
+      'https://merchant.example/quote',
+      paymentRequired,
+      { verifyFn: async () => invalid as never },
+    );
+
+    expect(result).toMatchObject({
+      status: 'UNAVAILABLE',
+      evidenceSource: 'UNAVAILABLE',
+      errorCode: 'IFF_INVALID_RESPONSE',
+    });
+  });
+
+  it('records the resolved custom evidence service instead of labeling it as the public API', async () => {
+    const verifyFn = vi.fn(async () => verifyResult('consistent'));
+    const result = await verifyX402Requirement(
+      'https://merchant.example/quote',
+      paymentRequired,
+      { baseUrl: 'https://iff.internal.example/', verifyFn },
+    );
+
+    expect(result).toMatchObject({
+      status: 'VERIFIED',
+      evidenceBaseUrl: 'https://iff.internal.example',
+      evidenceSource: 'IFF_CUSTOM_API',
+    });
+    expect(verifyFn).toHaveBeenCalledWith(
+      'https://merchant.example/quote',
+      paymentRequired,
+      expect.objectContaining({ baseUrl: 'https://iff.internal.example' }),
+    );
+  });
+
+  it('rejects plaintext custom evidence services except explicit loopback development', async () => {
+    const remote = await verifyX402Requirement(
+      'https://merchant.example/quote',
+      paymentRequired,
+      { baseUrl: 'http://iff.internal.example', verifyFn: async () => verifyResult('consistent') },
+    );
+    const local = await verifyX402Requirement(
+      'https://merchant.example/quote',
+      paymentRequired,
+      { baseUrl: 'http://127.0.0.1:8787', verifyFn: async () => verifyResult('consistent') },
+    );
+
+    expect(remote).toMatchObject({ status: 'UNAVAILABLE', errorCode: 'IFF_INVALID_BASE_URL' });
+    expect(local).toMatchObject({ status: 'VERIFIED', evidenceSource: 'IFF_CUSTOM_API', evidenceBaseUrl: 'http://127.0.0.1:8787' });
+  });
+
+  it('keeps the timeout active until the complete IFF response body arrives', async () => {
+    const fetchImpl = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"url":"https://merchant.example/quote",'));
+        // Deliberately never close: resolving headers must not clear the body deadline.
+      },
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const result = await verifyX402Requirement(
+      'https://merchant.example/quote',
+      paymentRequired,
+      { fetchImpl: fetchImpl as typeof fetch, timeoutMs: 5 },
+    );
+
+    expect(result).toMatchObject({
+      status: 'UNAVAILABLE',
+      evidenceSource: 'UNAVAILABLE',
+      errorCode: 'IFF_TIMEOUT',
+    });
+  });
+
+  it('caps a chunked IFF response body at 256 KiB', async () => {
+    const oversized = 'x'.repeat(256 * 1024 + 1);
+    const fetchImpl = vi.fn(async () => new Response(oversized, {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    const result = await verifyX402Requirement(
+      'https://merchant.example/quote',
+      paymentRequired,
+      { fetchImpl: fetchImpl as typeof fetch },
+    );
+
+    expect(result).toMatchObject({
+      status: 'UNAVAILABLE',
+      evidenceSource: 'UNAVAILABLE',
+      errorCode: 'IFF_RESPONSE_TOO_LARGE',
     });
   });
 });

@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { GoogleGenAI } from "@google/genai";
 import { preflightX402Response } from "../services/iffX402.js";
 import { isExampleInput, getExampleResponse } from "./example-responses.js";
-import { isKnownSafeUrl, getSafeResponse } from "./safe-domains.js";
+import {
+  buildOfficialDomainIdentityFacts,
+  getOfficialDomainIdentity,
+  type OfficialDomainIdentity,
+} from "./safe-domains.js";
 
 // =============================================================================
 // BOUNDED WARM-INSTANCE STATE — no external storage operations
@@ -55,6 +59,13 @@ const MAX_REQUESTS_PER_WINDOW = 10; // Max 10 API calls per IP per hour
 const MAX_INPUT_LENGTH = 2000; // Max length for URL or SMS text
 const ALLOWED_LANGUAGES = ['en', 'zh-TW', 'vi'];
 const ALLOWED_INPUT_TYPES = ['URL', 'SMS_TEXT', 'PHONE'];
+
+// Server-side page observation is an active outbound fetch of a caller-supplied
+// URL. Keep it off by default; operators must opt in only after isolating and
+// restricting runtime egress. Passive/public URL intelligence checks remain
+// available independently.
+export const isUrlObservationEnabled = (): boolean =>
+  process.env.ENABLE_URL_OBSERVATION === 'true';
 
 // =============================================================================
 // DEGRADATION TRACKING — classify per-service failures and compute severity
@@ -691,7 +702,9 @@ async function fetchPage(url: string): Promise<Response> {
 // SSRF guard for user-controlled URLs (observeUrl fetches them server-side,
 // including every redirect hop). Blocks loopback/private/link-local/reserved
 // hosts and non-numeric tricks (bare integers, hex, leading-zero octets).
-// DNS rebinding is out of scope — Vercel egress has no internal network.
+// This is defense in depth, not a complete DNS-rebinding defense. Deployments
+// that opt in must also isolate egress and block access to internal/metadata
+// networks at the runtime or network layer.
 export function isPrivateHostname(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/\.+$/, '');
   if (h === 'localhost' || h === 'localhost.localdomain') return true;
@@ -735,7 +748,8 @@ function isBlockedTarget(url: string): boolean {
 // Second SSRF layer: resolve the hostname and reject if ANY answer is a
 // private/link-local/reserved IP. Catches public names that deliberately map
 // to internal space (e.g. *.nip.io, an attacker's own A record → 169.254.x).
-// DNS rebinding between this check and the fetch is still out of scope.
+// DNS rebinding between this check and the later fetch remains possible, which
+// is why URL observation is opt-in and requires an external egress boundary.
 async function resolvesToPrivateIP(hostname: string): Promise<boolean> {
   try {
     const { lookup } = await import('node:dns/promises');
@@ -1510,6 +1524,26 @@ async function buildAgentVerification(normalizedInput: any, inputType: string): 
     };
   }
 
+  if (!isUrlObservationEnabled()) {
+    return {
+      status: 'NOT_RUN',
+      originalUrl: targetUrl,
+      redirectChain: [],
+      finalLandingPage: targetUrl,
+      httpStatus: null,
+      pageStatus: 'disabled_by_operator',
+      forms: [],
+      ctaButtons: [],
+      asksForLogin: false,
+      asksForOtp: false,
+      asksForPayment: false,
+      asksForAppDownload: false,
+      asksToAddChat: false,
+      screenshots: [],
+      riskObservations: [],
+    };
+  }
+
   try {
     const observed = await observeUrl(targetUrl);
 
@@ -1656,24 +1690,37 @@ function deriveConclusion(verdict: string, finalVerdict: string, agentVerificati
   return '目前看起來比較像一般訊息，沒有看到足以直接升高風險的明確證據。';
 }
 
-function deriveOfficialRoute(normalizedInput: any, identityStatus: string, trustScore: number, agentVerification: any, language: string): any {
+function deriveOfficialRoute(
+  normalizedInput: any,
+  identityStatus: string,
+  trustScore: number,
+  agentVerification: any,
+  language: string,
+  officialDomainIdentity: OfficialDomainIdentity | null = null,
+): any {
   const zh = language === 'zh-TW';
   if (normalizedInput.url) {
     try {
       const parsed = new URL(normalizedInput.url);
       const hostname = parsed.hostname.replace(/^www\./, '');
-      const isTrusted = trustScore >= 80 || identityStatus === 'OFFICIAL_PROJECT';
-      return isTrusted ? {
-        status: 'OFFICIAL_CONFIRMED',
-        label: hostname,
-        url: `${parsed.protocol}//${hostname}`,
-        rationale: zh ? '目前可直接確認這是高可信的官方入口，可改走這個入口重新操作。' : 'This appears to be the official route.',
-        lane: 'CORROBORATED',
-      } : trustScore >= 55 ? {
+      if (officialDomainIdentity) {
+        return {
+          status: 'OFFICIAL_CANDIDATE',
+          label: officialDomainIdentity.canonicalDomain,
+          url: `https://${officialDomainIdentity.canonicalDomain}`,
+          rationale: officialDomainIdentity.limitation,
+          lane: 'UNVERIFIED',
+          source: officialDomainIdentity.source,
+        };
+      }
+
+      // Model/search output may nominate a route for manual verification, but
+      // it cannot manufacture corroborated official status by score alone.
+      return trustScore >= 55 || identityStatus === 'OFFICIAL_PROJECT' ? {
         status: 'OFFICIAL_CANDIDATE',
         label: hostname,
         url: `${parsed.protocol}//${hostname}`,
-        rationale: zh ? '目前只能確認它是高可信候選，不建議把它當成最強 CTA 直接相信。' : 'This is a high-confidence candidate.',
+        rationale: zh ? '這只是由公開搜尋與模型提出的候選入口，請再向獨立官方來源核對；不能據此判定安全。' : 'This is a model/search candidate only. Verify it against an independent official source before use.',
         lane: 'MODEL_INFERENCE',
       } : {
         status: 'OFFICIAL_UNKNOWN',
@@ -1704,12 +1751,15 @@ function deriveOfficialRoute(normalizedInput: any, identityStatus: string, trust
 
 function buildPrimaryActions(officialRoute: any, language: string): any[] {
   const zh = language === 'zh-TW';
+  const isOperatorListed = officialRoute.source === 'OPERATOR_CONFIG';
   return [
     {
-      label: zh ? '改走正確官方入口' : 'Go to the correct official entry',
+      label: isOperatorListed
+        ? (zh ? '核對後開啟營運者列出的網域' : 'Verify, then open the operator-listed domain')
+        : (zh ? '核對官方入口候選' : 'Verify the official-route candidate'),
       actionUrl: officialRoute.url,
       kind: 'OFFICIAL_ROUTE',
-      emphasis: officialRoute.status === 'OFFICIAL_UNKNOWN' ? 'disabled' : 'primary',
+      emphasis: officialRoute.status === 'OFFICIAL_UNKNOWN' ? 'disabled' : isOperatorListed ? 'secondary' : 'primary',
       description: officialRoute.rationale,
     },
     {
@@ -1747,7 +1797,11 @@ function buildLikelyLosses(scamProbability: number, riskSignals: any[], agentVer
 
 function buildTrustSummary(agentVerification: any, officialRoute: any, riskSignals: any[]): any[] {
   return [
-    agentVerification.originalUrl && { label: 'Agent 觀察', value: '已檢查頁面流程', lane: 'OBSERVED' },
+    agentVerification.status !== 'NOT_RUN' && agentVerification.originalUrl && {
+      label: 'Agent 觀察',
+      value: '已檢查頁面流程',
+      lane: 'OBSERVED',
+    },
     officialRoute.status !== 'OFFICIAL_UNKNOWN' && { label: '官方入口', value: officialRoute.status, lane: officialRoute.lane },
     riskSignals.length > 0 && { label: '風險訊號', value: `${riskSignals.length} 個`, lane: 'MODEL_INFERENCE' },
   ].filter(Boolean);
@@ -1836,21 +1890,6 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // === SELF / KNOWN-SAFE SHORT-CIRCUIT ===
-    // Prevent the analyzer from flagging its own site (or other known-safe
-    // domains) as a scam due to false-positive keyword matches in educational
-    // copy ("付款", "投資", "LINE") and a very new domain age.
-    //
-    // Runs for URL type AND SMS_TEXT (bare domain like `verify1st.tw` without
-    // a protocol prefix). isKnownSafeUrl only matches when the whole input is
-    // a single hostname — so "verify1st.tw 是詐騙嗎" won't short-circuit.
-    if ((detectedType === 'URL' || detectedType === 'SMS_TEXT') && isKnownSafeUrl(sanitizedInput)) {
-      const safeRes = getSafeResponse(sanitizedInput, language);
-      if (safeRes) {
-        return res.status(200).json(safeRes);
-      }
-    }
-
     // Generate cache key
     const cacheKey = generateCacheKey(sanitizedInput, detectedType);
 
@@ -1932,6 +1971,9 @@ export default async function handler(req: any, res: any) {
     }
 
     const normalizedInput = normalizeInput(sanitizedInput, detectedType);
+    const officialDomainIdentity = detectedType === 'URL'
+      ? getOfficialDomainIdentity(sanitizedInput, language)
+      : null;
 
     // === GATHER OBJECTIVE FACTS (parallel, before AI call) ===
     // Confirmed blocklist hits land here; they clamp the final verdict in code
@@ -1939,10 +1981,16 @@ export default async function handler(req: any, res: any) {
     const hardSignals: string[] = [];
     let factsSection = '';
     const factsPromise = (async () => {
-      if (detectedType === 'URL') return buildURLFactsSection(sanitizedInput, degradedServices, hardSignals);
-      if (detectedType === 'PHONE') return buildPhoneFactsSection(sanitizedInput);
-      if (detectedType === 'SMS_TEXT') return buildSMSFactsSection(sanitizedInput, degradedServices, hardSignals);
-      return '';
+      const publicFacts = detectedType === 'URL'
+        ? await buildURLFactsSection(sanitizedInput, degradedServices, hardSignals)
+        : detectedType === 'PHONE'
+        ? await buildPhoneFactsSection(sanitizedInput)
+        : detectedType === 'SMS_TEXT'
+        ? await buildSMSFactsSection(sanitizedInput, degradedServices, hardSignals)
+        : '';
+      return [buildOfficialDomainIdentityFacts(officialDomainIdentity), publicFacts]
+        .filter(Boolean)
+        .join('\n\n');
     })();
 
     // Query Cofacts for SMS_TEXT (most relevant) and URL types
@@ -2235,6 +2283,7 @@ OUTPUT JSON ONLY:
       inputType: detectedType,
       originalInput: sanitizedInput,
       normalizedInput,
+      officialDomainIdentity: officialDomainIdentity ?? undefined,
       scamProbability,
       riskSignals,
       suggestedActions,
@@ -2252,7 +2301,14 @@ OUTPUT JSON ONLY:
     };
 
     fullData.finalVerdict = deriveFinalVerdict(fullData.scamProbability);
-    fullData.officialRoute = deriveOfficialRoute(normalizedInput, fullData.identityStatus, fullData.trustScore, agentVerification, language);
+    fullData.officialRoute = deriveOfficialRoute(
+      normalizedInput,
+      fullData.identityStatus,
+      fullData.trustScore,
+      agentVerification,
+      language,
+      officialDomainIdentity,
+    );
     fullData.primaryActions = buildPrimaryActions(fullData.officialRoute, language);
     fullData.likelyLosses = buildLikelyLosses(fullData.scamProbability, fullData.riskSignals, agentVerification, language);
     fullData.trustSummary = buildTrustSummary(agentVerification, fullData.officialRoute, fullData.riskSignals);
@@ -2377,7 +2433,14 @@ OUTPUT JSON ONLY:
       fullData.riskFactors = fullData.riskFactors.length > 0 ? fullData.riskFactors : [...hardSignals];
       fullData.suggestedActions = generateActions(fullData.scamProbability, fullData.riskSignals, language);
       fullData.seniorModeVerdict = generateSeniorVerdict(fullData.scamProbability, language);
-      fullData.officialRoute = deriveOfficialRoute(normalizedInput, fullData.identityStatus, fullData.trustScore, agentVerification, language);
+      fullData.officialRoute = deriveOfficialRoute(
+        normalizedInput,
+        fullData.identityStatus,
+        fullData.trustScore,
+        agentVerification,
+        language,
+        null,
+      );
       fullData.primaryActions = buildPrimaryActions(fullData.officialRoute, language);
       fullData.likelyLosses = buildLikelyLosses(fullData.scamProbability, fullData.riskSignals, agentVerification, language);
       fullData.trustSummary = buildTrustSummary(agentVerification, fullData.officialRoute, fullData.riskSignals);
@@ -2405,8 +2468,9 @@ OUTPUT JSON ONLY:
     const submissionTs = new Date().toISOString();
     const canCollectML = !isBotRequest && !forceRefresh && inputContent.length <= 10000;
 
-    // Log a flat summary to Google Sheets for human review & labeling when a
-    // webhook is explicitly configured. No full records are written to Blob.
+    // Log content-free metrics to Google Sheets for human review & labeling
+    // when a webhook is explicitly configured. Raw/sanitized input, narrative
+    // fields, and quoted evidence are deliberately excluded.
     // Google Apps Script redirects POST → must follow redirect manually (302 converts POST→GET otherwise)
     const webhookUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL;
     if (canCollectML && webhookUrl && inputContent.length <= 500) {
@@ -2415,12 +2479,13 @@ OUTPUT JSON ONLY:
         timestamp: submissionTs,
         language,
         inputType: detectedType,
-        input: inputContent,
-        sanitizedInput,
+        inputLength: inputContent.length,
         scamProbability: fullData.scamProbability,
         trustScore: fullData.trustScore,
-        verdict: fullData.verdict,
-        riskSignals: fullData.riskSignals,
+        finalVerdict: fullData.finalVerdict,
+        riskSignalTypes: fullData.riskSignals
+          .slice(0, 20)
+          .map((signal: any) => ({ type: signal.type, level: signal.level })),
       });
       void logToGoogleSheets(webhookUrl, sheetsPayload);
     }

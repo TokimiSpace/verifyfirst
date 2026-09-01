@@ -1,8 +1,9 @@
 {
   "name": "verify1st",
   "version": "1.0.0",
-  "description": "Multilingual anti-scam assistant with an experimental enterprise trust lab for Agent policy, evidence, vLEI, and x402 preflight",
+  "description": "Open-source multilingual anti-scam assistant and experimental enterprise evidence lab for vLEI and x402 preflight",
   "type": "module",
+  "packageManager": "npm@10.9.3",
   "engines": {
     "node": ">=20"
   },
@@ -37,7 +38,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
-    "@ifandonlyif/x402-preflight": "^0.1.0",
+    "@ifandonlyif/x402-preflight": "0.1.0",
     "@vercel/analytics": "^1.6.1",
     "lucide-react": "^0.555.0",
     "react": "^19.2.0",
@@ -47,6 +48,9 @@
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "10.4.21",
+    "postcss": "8.5.26",
+    "tailwindcss": "3.4.17",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vitest": "^4.0.18"

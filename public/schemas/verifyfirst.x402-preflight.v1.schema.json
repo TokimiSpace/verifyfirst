@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://verify1st.tw/schemas/verifyfirst.x402-preflight.v1.schema.json",
+  "title": "VerifyFirst x402 Preflight Evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "createdAt", "mode", "case", "endpoint",
+    "requirementDigest", "paymentRequired", "enterprisePolicy", "verifier",
+    "iff", "policyEvaluation", "execution", "source", "limitations", "id", "integrity"
+  ],
+  "properties": {
+    "schema": { "const": "verifyfirst.x402-preflight.v1" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "mode": { "enum": ["LIVE", "SIMULATION"] },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "owner"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "owner": { "type": "string", "minLength": 1, "maxLength": 500 }
+      }
+    },
+    "endpoint": { "type": "string", "format": "uri", "pattern": "^https://" },
+    "requirementDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "paymentRequired": { "$ref": "#/$defs/paymentRequired" },
+    "enterprisePolicy": { "$ref": "#/$defs/enterprisePolicy" },
+    "verifier": { "$ref": "#/$defs/verifier" },
+    "iff": { "anyOf": [{ "$ref": "#/$defs/iffResult" }, { "type": "null" }] },
+    "policyEvaluation": { "$ref": "#/$defs/policyEvaluation" },
+    "execution": { "$ref": "#/$defs/execution" },
+    "source": { "$ref": "#/$defs/source" },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "id": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "algorithm", "digest", "canonicalization", "authenticity", "provenance"],
+      "properties": {
+        "kind": { "const": "SELF_CHECK_ONLY" },
+        "algorithm": { "const": "SHA-256" },
+        "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "canonicalization": { "const": "verifyfirst.sorted-json.v1" },
+        "authenticity": { "const": "UNSIGNED" },
+        "provenance": { "const": "VERIFYFIRST_BROWSER_GENERATED" }
+      }
+    }
+  },
+  "$defs": {
+    "paymentRequired": {
+      "type": "object",
+      "required": ["x402Version", "accepts"],
+      "properties": {
+        "x402Version": { "const": 2 },
+        "accepts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": ["scheme", "network", "asset", "amount", "payTo"],
+            "properties": {
+              "scheme": { "type": "string", "minLength": 1 },
+              "network": { "type": "string", "minLength": 1 },
+              "asset": { "type": "string", "minLength": 1 },
+              "amount": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+              "payTo": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "enterprisePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowedNetworks", "allowedAssets", "allowedPayees", "maxAmount"],
+      "properties": {
+        "allowedNetworks": { "type": "array", "items": { "type": "string" } },
+        "allowedAssets": { "type": "array", "items": { "type": "string" } },
+        "allowedPayees": { "type": "array", "items": { "type": "string" } },
+        "maxAmount": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" }
+      }
+    },
+    "verifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyVersion", "iffSdk"],
+      "properties": {
+        "policyVersion": { "const": "verifyfirst.x402-enterprise-policy.v1" },
+        "iffSdk": { "const": "@ifandonlyif/x402-preflight@0.1.0" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement", "externalEvidence", "merchantEndpointFetched"],
+      "properties": {
+        "requirement": { "const": "CALLER_SUPPLIED" },
+        "externalEvidence": { "enum": ["IFF_PUBLIC_API", "IFF_CUSTOM_API", "IFF_UNAVAILABLE", "NOT_QUERIED_POLICY_MISMATCH", "SIMULATED"] },
+        "merchantEndpointFetched": { "const": false }
+      }
+    },
+    "iffResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "evidenceSource", "status", "inclusionAvailable"],
+      "properties": {
+        "provider": { "const": "ifandonlyif.io" },
+        "evidenceBaseUrl": { "type": "string", "format": "uri" },
+        "evidenceSource": { "enum": ["IFF_PUBLIC_API", "IFF_CUSTOM_API", "SIMULATED", "UNAVAILABLE"] },
+        "status": { "enum": ["VERIFIED", "INVALID_REQUIREMENT", "UNAVAILABLE"] },
+        "verdict": { "enum": ["consistent", "diverged", "stale", "unobserved"] },
+        "divergenceKind": { "enum": ["amount_only", "payee"] },
+        "matchesLastObserved": { "type": "boolean" },
+        "known": { "type": "boolean" },
+        "ownershipStatus": { "type": "string" },
+        "ownershipMethod": { "type": "string" },
+        "ownershipVerifiedAt": { "type": "string" },
+        "observedAt": { "type": "string" },
+        "stableSince": { "type": "string" },
+        "monitorId": { "type": "string" },
+        "monitorPublicKey": { "type": "string" },
+        "monitorSignature": { "type": "string" },
+        "reportHash": { "type": "string" },
+        "receivedFingerprint": { "type": "string" },
+        "receivedOptionFingerprints": { "type": "array", "items": { "type": "string" } },
+        "observedFingerprint": { "type": "string" },
+        "observedOptionFingerprints": { "type": "array", "items": { "type": "string" } },
+        "unmatchedReceivedOptions": { "type": "array", "items": { "type": "string" } },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["setFingerprint", "firstSeen", "lastSeen", "observations"],
+            "properties": {
+              "setFingerprint": { "type": "string" },
+              "firstSeen": { "type": "string" },
+              "lastSeen": { "type": "string" },
+              "observations": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "inclusionAvailable": { "type": "boolean" },
+        "inclusionTreeSize": { "type": "integer", "minimum": 0 },
+        "inclusionLogIndex": { "type": "integer", "minimum": 0 },
+        "inclusionAuditPath": { "type": "array", "items": { "type": "string" } },
+        "inclusionSignedTreeHead": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["logId", "treeSize", "timestamp", "rootHash", "signature", "publicKey"],
+          "properties": {
+            "logId": { "type": "string" },
+            "treeSize": { "type": "integer", "minimum": 0 },
+            "timestamp": { "type": "string" },
+            "rootHash": { "type": "string" },
+            "signature": { "type": "string" },
+            "publicKey": { "type": "string" }
+          }
+        },
+        "disclaimer": { "type": "string" },
+        "errorCode": { "type": "string" }
+      }
+    },
+    "policyEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "iffState", "localPolicyMatched", "selectedIndex", "selectedOptionBinding", "paymentExecution", "optionChecks"],
+      "properties": {
+        "decision": {
+          "enum": [
+            "READY_FOR_HUMAN_APPROVAL", "DENY_REQUIREMENT_DIVERGED",
+            "HOLD_IFF_EVIDENCE_STALE", "HOLD_IFF_UNOBSERVED",
+            "HOLD_IFF_UNAVAILABLE", "HOLD_POLICY_MISMATCH"
+          ]
+        },
+        "iffState": { "enum": ["consistent", "diverged", "stale", "unobserved", "unavailable"] },
+        "localPolicyMatched": { "type": "boolean" },
+        "selectedIndex": { "type": ["integer", "null"], "minimum": 0 },
+        "selectedOptionBinding": { "const": "NOT_BOUND" },
+        "paymentExecution": { "const": "NOT_EXECUTED" },
+        "optionChecks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["index", "option", "checks", "matchesPolicy", "mismatchReasons"],
+            "properties": {
+              "index": { "type": "integer", "minimum": 0 },
+              "option": { "$ref": "#/$defs/paymentRequired/properties/accepts/items" },
+              "checks": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["networkAllowed", "assetAllowed", "payeeAllowed", "amountWithinLimit"],
+                "properties": {
+                  "networkAllowed": { "type": "boolean" },
+                  "assetAllowed": { "type": "boolean" },
+                  "payeeAllowed": { "type": "boolean" },
+                  "amountWithinLimit": { "type": "boolean" }
+                }
+              },
+              "matchesPolicy": { "type": "boolean" },
+              "mismatchReasons": {
+                "type": "array",
+                "items": { "enum": ["NETWORK_NOT_ALLOWED", "ASSET_NOT_ALLOWED", "PAYEE_NOT_ALLOWED", "AMOUNT_EXCEEDS_LIMIT"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "payment", "selectedOption"],
+      "properties": {
+        "status": { "const": "NOT_EXECUTED" },
+        "payment": { "const": "NOT_EXECUTED" },
+        "selectedOption": { "const": "NOT_BOUND" }
+      }
+    }
+  }
+}

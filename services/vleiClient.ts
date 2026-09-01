@@ -646,7 +646,7 @@ export const loadOfficialVleiFixture = async (
   if (typeof fetchImpl !== 'function') {
     throw new VleiVerificationError(
       'VLEI_FIXTURE_FETCH_UNAVAILABLE',
-      'No fetch implementation is available for the official fixture.',
+      'No fetch implementation is available for the pinned upstream test fixture.',
     );
   }
 
@@ -657,7 +657,7 @@ export const loadOfficialVleiFixture = async (
   if (!response.ok) {
     throw new VleiVerificationError(
       'VLEI_FIXTURE_HTTP_ERROR',
-      `Official fixture request failed with HTTP ${response.status}.`,
+      `Pinned upstream test fixture request failed with HTTP ${response.status}.`,
       response.status,
     );
   }

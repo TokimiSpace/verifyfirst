@@ -45,28 +45,35 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('KERI + ACDC + 可驗證狀態');
     expect(page).toContain('宏岳精密與畫面中的驗證結果不代表真實 GLEIF');
     expect(page).toContain('https://www.gleif.org/en/organizational-identity/introducing-the-verifiable-lei-vlei');
-    expect(page).toContain('https://github.com/GLEIF-IT/vlei-trainings/tree/main/markdown');
+    expect(page).toContain('https://github.com/GLEIF-IT/vlei-trainings/tree/4af87dc13b3f145c4d078448b1d6ec5a1f4bef25/markdown');
     expect(page).toContain('function verifyVleiTrust()');
   });
 
   it('loads official ACDC JSON, schema, and CESR samples with layered verification', () => {
-    expect(page).toContain('https://raw.githubusercontent.com/WebOfTrust/vLEI/main/samples/acdc/legal-entity-vLEI-credential.json');
+    expect(page).toContain('https://raw.githubusercontent.com/WebOfTrust/vLEI/743622abc9a3b3684552e439efc5c8b6fda2f645/samples/acdc/legal-entity-vLEI-credential.json');
+    expect(page).not.toContain('raw.githubusercontent.com/WebOfTrust/vLEI/main/');
     expect(page).toContain('E4OU1DuxIAtRRscHSSQCO0UIpk3tVc0QHaNBDUmpHKac-acdc.cesr');
     expect(page).toContain('schema/acdc/legal-entity-vLEI-credential.json');
     expect(page).toContain('function extractCesrAcdcs(stream)');
     expect(page).toContain('BROWSER_STRUCTURE_AND_LINKAGE');
-    expect(page).toContain('KERI CRYPTO · LIVE BACKEND');
+    expect(page).toContain('KERI CRYPTO · LIVE DEMO BACKEND');
     expect(page).toContain('PUT /presentations/{said}（Content-Type: application/json+cesr）→ GET /authorizations/{aid}');
     expect(page).not.toContain('POST /presentations');
   });
 
+  it('uses the same-origin x402 adapter instead of executing an SDK from a CDN', () => {
+    expect(page).toContain("verifyFirstApi:'/api/x402-preflight'");
+    expect(page).not.toContain('cdn.jsdelivr.net/npm/@ifandonlyif');
+    expect(page).not.toContain('import(IFF_SDK.module)');
+  });
+
   it('never marks the KERI crypto layer verified before the live backend actually answers', () => {
     expect(page).not.toContain("setVerifierCheck(3,'ok','KERI CRYPTO · LIVE BACKEND')");
-    expect(page).toContain('KERI CRYPTO · LIVE BACKEND AVAILABLE · 尚未送出');
-    expect(page).toContain("setBackendCheck('ok','KERI CRYPTO · LIVE BACKEND VALID')");
-    expect(page).toContain("setBackendCheck('warn',`KERI CRYPTO · LIVE BACKEND ${error.name==='AbortError'?'TIMEOUT':'ERROR'} · FAIL CLOSED`)");
+    expect(page).toContain('KERI CRYPTO · LIVE DEMO BACKEND · 尚未送出 · NOT PRODUCTION');
+    expect(page).toContain("setBackendCheck('ok','KERI CRYPTO · LIVE DEMO BACKEND VALID · NOT PRODUCTION')");
+    expect(page).toContain("setBackendCheck('warn',`KERI CRYPTO · LIVE DEMO BACKEND ${error.name==='AbortError'?'TIMEOUT':'ERROR'} · FAIL CLOSED`)");
     expect(page).toContain('STATUS · NOT REVOKED');
-    expect(page).toContain('witness 允許清單於 VERIFIER_MODE=test 下不強制');
+    expect(page).toContain('witness 允許清單不作為正式控制');
   });
 
   it('links to the Update Trust lifecycle page', () => {
@@ -83,11 +90,12 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('BACKEND_TIMEOUT');
   });
 
-  it('separates the replayable training trust domain from production', () => {
+  it('separates the replayable training domain from the non-production live demo backend', () => {
     expect(page).toContain('Training Sandbox · 可重播');
-    expect(page).toContain('Production Verifier · GLEIF Root');
+    expect(page).toContain('Live Demo Backend · Test Mode');
     expect(page).toContain('TRAINING ONLY');
-    expect(page).toContain('Production 模式不會以 Training 根金鑰產生 VALID');
+    expect(page).toContain('Live demo 不會以 Training 根金鑰產生 VALID');
+    expect(page).toContain('此 URL 不屬於自架 production');
     expect(page).toContain("selectVerifierMode('training')");
     expect(page).toContain("verifierMode=mode==='production'?'production':'training'");
   });
@@ -126,14 +134,20 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain("policy='DENY_SIGNATURE_INVALID'");
   });
 
-  it('pins and hardens the deployable GLEIF verifier container', () => {
+  it('pins and labels the non-production live demo verifier container', () => {
     expect(verifierDockerfile).toContain('5850051b52dce24ed59eae486af76e7c73f6012c');
+    expect(verifierDockerfile).toContain('40bc4b8586d5ecd409937837d43de27aaf0940d49c24ba40d17c28d753bc385f');
+    expect(verifierDockerfile).toContain('sha256sum -c -');
     expect(verifierDockerfile).toContain('ENTRYPOINT ["/keripy/venv/bin/verifier"');
+    expect(verifierDockerfile).toContain('VERIFYFIRST_VLEI_PROFILE=live-demo-test-backend');
+    expect(verifierDockerfile).toContain('VERIFIER_MODE=test');
     expect(verifierDockerfile).toContain('VERIFY_ROOT_OF_TRUST=True');
     expect(verifierDockerfile).toContain('VERIFIER_ENV=production');
     expect(verifierDockerfile).toContain('DEV_ONLY_ENDPOINTS=^/root_of_trust');
     expect(verifierConfig).toContain('"revocationCheck": true');
     expect(verifierConfig).toContain('"witnessUrlAllowlist"');
+    expect(verifierConfig).not.toContain('/refs/heads/main/');
+    expect(verifierConfig).toContain('/97850396f504bf8c4e19a42af3290e4b2618f50e/');
   });
 
   it('queries the live GLEIF LEI Search API and fails closed', () => {
@@ -192,17 +206,61 @@ describe('Trust Pathways standalone demo', () => {
     expect(page).toContain('FIXTURE FALLBACK');
   });
 
-  it('embeds the pinned IFF SDK as a pre-payment evidence input', () => {
+  it('uses the pinned IFF SDK through the same-origin preflight API', () => {
     expect(page).toContain('IFF SDK PREFLIGHT · x402 v2');
     expect(page).toContain('https://ifandonlyif.io/sdk');
-    expect(page).toContain('@ifandonlyif/x402-preflight@0.1.0/dist/index.js');
-    expect(page).toContain('const result=await sdk.verify(endpoint.toString(),requirement)');
+    expect(page).toContain("version:'0.1.0'");
+    expect(page).toContain("verifyFirstApi:'/api/x402-preflight'");
+    expect(page).toContain('await fetch(IFF_SDK.verifyFirstApi');
+    expect(page).toContain("policy:payload.policy?.decision||'HOLD_IFF_UNAVAILABLE'");
+    expect(page).toContain('result.received?.set_fingerprint||result.received_set_fingerprint||null');
+    expect(page).toContain('result.observed?.report_hash||result.observed_report_hash||null');
+    expect(page).toContain('result.inclusion.sth?.root_hash||result.inclusion.root_hash||null');
+    expect(page).not.toContain('cdn.jsdelivr.net/npm/@ifandonlyif');
+    expect(page).not.toContain("import('https://");
     expect(page).toContain("consistent:{verdict:'consistent',policy:'CONTINUE_OTHER_CHECKS'");
     expect(page).toContain("diverged:{verdict:'diverged',policy:'HOLD_REQUIREMENT_DIVERGED'");
     expect(page).toContain("stale:{verdict:'stale',policy:'REVIEW_STALE_EVIDENCE'");
     expect(page).toContain("unobserved:{verdict:'unobserved',policy:'REVIEW_UNOBSERVED_ENDPOINT'");
     expect(page).toContain("return'HOLD_IFF_UNAVAILABLE'");
     expect(page).toContain('不能證明秘密從未外洩');
+  });
+
+  it('preserves API policy and IFF evidence when the payment scene re-renders', () => {
+    const match = page.match(/    function iffPolicyFor\(result\)\{[\s\S]*?\n    function runIffTrainingCase/);
+    expect(match).not.toBeNull();
+    const functions = match![0].replace(/\n    function runIffTrainingCase$/, '');
+    const elements = Object.fromEntries([
+      '#iffEndpoint', '#iffResult', '#iffVerdict', '#iffSource', '#iffPolicy', '#iffDetail', '#iffMeta',
+    ].map(selector => [selector, { value: 'https://merchant.example/pay', className: '', textContent: '', innerHTML: '' }]));
+    const context = vm.createContext({
+      document: { querySelectorAll: () => [] },
+      $: (selector: string) => elements[selector],
+    });
+    vm.runInContext(`let iffPreflight = {}; ${functions}`, context);
+    const render = vm.runInContext(`(input, source) => {
+      renderIffResult(input, source);
+      return JSON.parse(JSON.stringify(iffPreflight));
+    }`, context) as (input: Record<string, unknown>, source: string) => Record<string, any>;
+
+    const first = render({
+      url: 'https://merchant.example/pay',
+      verdict: 'diverged',
+      policy: 'DENY_REQUIREMENT_DIVERGED',
+      received: { set_fingerprint: 'received-fingerprint' },
+      observed: { report_hash: 'observed-report-hash' },
+      inclusion: { tree_size: 42, log_index: 7, sth: { root_hash: 'root-hash' } },
+      checked_at: '2026-09-01T10:00:00.000Z',
+    }, 'IFF_PUBLIC_API · @ifandonlyif/x402-preflight@0.1.0');
+    const afterSceneSwitch = render(first, first.source);
+
+    expect(afterSceneSwitch).toMatchObject({
+      policy: 'DENY_REQUIREMENT_DIVERGED',
+      received_set_fingerprint: 'received-fingerprint',
+      observed_report_hash: 'observed-report-hash',
+      inclusion: { tree_size: 42, log_index: 7, root_hash: 'root-hash' },
+    });
+    expect(elements['#iffPolicy'].textContent).toBe('DENY_REQUIREMENT_DIVERGED');
   });
 
   it('keeps the judge journey on two VerifyFirst URLs and embeds IFF in the main demo', () => {

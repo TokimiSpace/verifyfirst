@@ -31,6 +31,7 @@ beforeEach(() => {
   ));
   process.env.GEMINI_API_KEY = 'test-key';
   delete process.env.GOOGLE_SHEETS_WEBHOOK_URL;
+  delete process.env.ENABLE_URL_OBSERVATION;
   delete process.env.MEMORY_CACHE_MAX_ENTRIES;
 });
 
@@ -186,44 +187,78 @@ describe('POST /api/analyze — example short-circuit', () => {
   });
 });
 
-describe('POST /api/analyze — self / known-safe-domain short-circuit', () => {
-  it('short-circuits "https://verify1st.tw" URL input to verified_safe', async () => {
+describe('POST /api/analyze — operator-listed domain identity', () => {
+  it('still runs the normal evidence and Gemini pipeline for the VerifyFirst URL', async () => {
     const { default: handler } = await import('../api/analyze');
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 61, sp: 39, v: 'Evidence review required', cn: 'Verify independently', b: 'x', d: 'x' }),
+      candidates: [{ groundingMetadata: { groundingChunks: [{ web: { title: 'source', uri: 'https://example.test/source' } }] } }],
+    });
     const res = makeRes();
     await handler(
       makeReq({ input: 'https://verify1st.tw', inputType: 'URL', language: 'zh-TW' }),
       res
     );
     expect(res.statusCode).toBe(200);
-    expect(res.jsonBody.source).toBe('verified_safe');
-    expect(res.jsonBody.finalVerdict).toBe('A_MARKETING');
-    expect(mockGenerateContent).not.toHaveBeenCalled();
+    expect(res.jsonBody.source).toBe('api');
+    expect(res.jsonBody.source).not.toBe('verified_safe');
+    expect(res.jsonBody.trustScore).toBe(61);
+    expect(res.jsonBody.scamProbability).toBe(39);
+    expect(res.jsonBody.officialDomainIdentity).toMatchObject({
+      canonicalDomain: 'verify1st.tw',
+      source: 'OPERATOR_CONFIG',
+    });
+    expect(res.jsonBody.officialRoute).toMatchObject({
+      status: 'OFFICIAL_CANDIDATE',
+      lane: 'UNVERIFIED',
+      source: 'OPERATOR_CONFIG',
+    });
+    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
   });
 
-  it('short-circuits bare domain "verify1st.tw" (no protocol, SMS_TEXT classification)', async () => {
-    const { default: handler } = await import('../api/analyze');
-    const res = makeRes();
-    await handler(
-      makeReq({ input: 'verify1st.tw', inputType: 'SMS_TEXT', language: 'zh-TW' }),
-      res
-    );
-    expect(res.statusCode).toBe(200);
-    expect(res.jsonBody.source).toBe('verified_safe');
-    expect(mockGenerateContent).not.toHaveBeenCalled();
-  });
-
-  it('does NOT short-circuit SMS_TEXT that contains the domain inside other text', async () => {
+  it('upgrades the bare VerifyFirst domain and still runs normal analysis', async () => {
     const { default: handler } = await import('../api/analyze');
     mockGenerateContent.mockResolvedValueOnce({
-      text: JSON.stringify({ ts: 50, sp: 50, v: 'x', cn: 'x', b: 'x', d: 'x' }),
-      candidates: [{ groundingMetadata: {} }],
+      text: JSON.stringify({ ts: 62, sp: 38, v: 'Evidence review required', cn: 'Verify independently', b: 'x', d: 'x' }),
+      candidates: [{ groundingMetadata: { groundingChunks: [{ web: { title: 'source', uri: 'https://example.test/source' } }] } }],
     });
     const res = makeRes();
     await handler(
-      makeReq({ input: 'verify1st.tw 是詐騙嗎', inputType: 'SMS_TEXT', language: 'zh-TW' }),
+      makeReq({ input: 'verify1st.tw', inputType: 'SMS_TEXT', language: 'en' }, '198.51.100.90'),
       res
     );
+    expect(res.jsonBody).toMatchObject({
+      source: 'api',
+      inputType: 'URL',
+      trustScore: 62,
+      scamProbability: 38,
+    });
+    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    'tokimi.space',
+    'pay.tokimi.space',
+    'ifandonlyif.io',
+    'bridgetime.org',
+    'attacker.verify1st.tw',
+  ])('does not inherit a safety bypass for %s', async (domain) => {
+    const { default: handler } = await import('../api/analyze');
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 57, sp: 43, v: 'x', cn: 'x', b: 'x', d: 'x' }),
+      candidates: [{ groundingMetadata: { groundingChunks: [{ web: { title: 'source', uri: 'https://example.test/source' } }] } }],
+    });
+    const res = makeRes();
+    await handler(
+      makeReq({ input: `https://${domain}`, inputType: 'URL', language: 'en' }, `198.51.100.${domain.length}`),
+      res
+    );
+    expect(res.jsonBody.source).toBe('api');
     expect(res.jsonBody.source).not.toBe('verified_safe');
+    expect(res.jsonBody.trustScore).not.toBe(98);
+    expect(res.jsonBody.scamProbability).not.toBe(2);
+    expect(res.jsonBody.officialDomainIdentity).toBeUndefined();
+    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -317,6 +352,52 @@ describe('POST /api/analyze — happy-path degradation', () => {
   });
 });
 
+describe('POST /api/analyze — optional labeling webhook', () => {
+  it('sends content-free metrics and never raw or sanitized input', async () => {
+    const { default: handler } = await import('../api/analyze');
+    const marker = 'private-marker-never-export-7f4a';
+    process.env.GOOGLE_SHEETS_WEBHOOK_URL = 'https://hooks.example.test/sheets';
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({
+        ts: 64,
+        sp: 36,
+        v: 'Review the evidence',
+        cn: 'No content should enter the labeling webhook',
+        b: 'x',
+        d: 'x',
+        rs: [{ t: 'PRESSURE_TACTICS', e: 'quoted evidence must stay out', l: 1 }],
+      }),
+      candidates: [{ groundingMetadata: { groundingChunks: [{ web: { title: 'source', uri: 'https://example.test/source' } }] } }],
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = makeRes();
+    await handler(
+      makeReq({ input: `Please review ${marker}`, inputType: 'SMS_TEXT', language: 'en' }, '198.51.100.92'),
+      res,
+    );
+
+    const webhookCall = fetchMock.mock.calls.find(([url, init]) =>
+      String(url) === process.env.GOOGLE_SHEETS_WEBHOOK_URL && init?.method === 'POST');
+    expect(webhookCall).toBeTruthy();
+    const payload = JSON.parse(String(webhookCall?.[1]?.body));
+    expect(payload).toMatchObject({
+      language: 'en',
+      inputType: 'SMS_TEXT',
+      inputLength: expect.any(Number),
+      scamProbability: 36,
+      trustScore: 64,
+    });
+    expect(payload).not.toHaveProperty('input');
+    expect(payload).not.toHaveProperty('sanitizedInput');
+    expect(payload).not.toHaveProperty('verdict');
+    expect(payload).not.toHaveProperty('riskSignals');
+    expect(JSON.stringify(payload)).not.toContain(marker);
+    expect(JSON.stringify(payload)).not.toContain('quoted evidence must stay out');
+  });
+});
+
 describe('POST /api/analyze — input hardening', () => {
   it('rejects non-http(s) schemes passed with an explicit URL type', async () => {
     const { default: handler } = await import('../api/analyze');
@@ -357,8 +438,35 @@ describe('POST /api/analyze — input hardening', () => {
     expect(res.jsonBody.originalInput).toBe('https://some-random-shop.tw');
   });
 
+  it('keeps active URL observation off by default while public URL checks still run', async () => {
+    const { default: handler } = await import('../api/analyze');
+    const target = 'https://observation-disabled.example/path';
+    mockGenerateContent.mockResolvedValueOnce({
+      text: JSON.stringify({ ts: 50, sp: 50, v: 'x', cn: 'x', b: 'x', d: 'x' }),
+      candidates: [{ groundingMetadata: {} }],
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = makeRes();
+    await handler(
+      makeReq({ input: target, inputType: 'URL', language: 'en' }, '198.51.100.91'),
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.agentVerification).toMatchObject({
+      status: 'NOT_RUN',
+      pageStatus: 'disabled_by_operator',
+      originalUrl: target,
+    });
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === target)).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('rdap.org/domain/observation-disabled.example'))).toBe(true);
+  });
+
   it('refuses to observe private/internal targets (SSRF guard)', async () => {
     const { default: handler } = await import('../api/analyze');
+    process.env.ENABLE_URL_OBSERVATION = 'true';
     mockGenerateContent.mockResolvedValueOnce({
       text: JSON.stringify({ ts: 50, sp: 50, v: 'x', cn: 'x', b: 'x', d: 'x' }),
       candidates: [{ groundingMetadata: {} }],
@@ -375,6 +483,7 @@ describe('POST /api/analyze — input hardening', () => {
 
   it('blocks a public URL that redirects to a private target (per-hop guard)', async () => {
     const { default: handler } = await import('../api/analyze');
+    process.env.ENABLE_URL_OBSERVATION = 'true';
     mockGenerateContent.mockResolvedValueOnce({
       text: JSON.stringify({ ts: 50, sp: 50, v: 'x', cn: 'x', b: 'x', d: 'x' }),
       candidates: [{ groundingMetadata: {} }],
@@ -400,6 +509,7 @@ describe('POST /api/analyze — input hardening', () => {
 
   it('preflights an x402 payment requirement with IFF before surfacing the 402', async () => {
     const { default: handler } = await import('../api/analyze');
+    process.env.ENABLE_URL_OBSERVATION = 'true';
     const paymentRequired = {
       x402Version: 2,
       accepts: [{

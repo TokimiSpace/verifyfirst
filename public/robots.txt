@@ -1,11 +1,11 @@
-# robots.txt for CryptoTruth
+# robots.txt for VerifyFirst
 # Allow all search engines to crawl the site
 
 User-agent: *
 Allow: /
 
 # Sitemap location
-Sitemap: https://cryptotruth.tokimi.space/sitemap.xml
+Sitemap: https://verify1st.tw/sitemap.xml
 
 # Crawl-delay to be respectful to search engines
 Crawl-delay: 1

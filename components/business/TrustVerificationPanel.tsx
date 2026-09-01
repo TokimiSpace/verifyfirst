@@ -15,7 +15,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { GleifLeiRecord, lookupLeiRecord } from '../../services/gleif';
+import { lookupLeiRecord } from '../../services/gleif';
 import { sealEvidenceBody, sha256EvidenceBody } from '../../services/evidenceIntegrity';
 import {
   MAX_VLEI_CESR_BYTES,
@@ -27,6 +27,8 @@ import {
   verifyVleiCesr,
 } from '../../services/vleiClient';
 import { EnterpriseVerificationRecord, Language } from '../../types';
+import type { GleifLookupEvidence } from '../../services/vleiHandoff';
+import VleiImplementationIntake from './VleiImplementationIntake';
 
 export type VerificationSection = 'LEI' | 'VLEI';
 
@@ -47,93 +49,91 @@ interface VleiViewResult {
   evidenceDigest: string;
 }
 
-interface CheckedGleifLeiRecord extends GleifLeiRecord {
-  lookupDigest: `sha256:${string}`;
-}
+type CheckedGleifLeiRecord = GleifLookupEvidence;
 
 type CesrSource = 'PASTED_CESR' | 'LOCAL_FILE' | 'GLEIF_TEST_FIXTURE';
 const LEI_LOOKUP_MAX_AGE_MS = 15 * 60 * 1_000;
 
 const COPY = {
   'zh-TW': {
-    back: '回到行動政策', eyebrow: 'LIVE VERIFICATION WORKSPACE', title: '先確認代表誰，再決定能做什麼。',
-    body: '把 Trust Pathways 的即時法人查詢與 Update Trust 的密碼學驗證收進同一個工作台。原始 CESR 只留在瀏覽器記憶體，不上傳、不交給 AI。',
+    back: '回到企業總覽', eyebrow: 'vLEI · ORGANIZATION AUTHORITY WORKSPACE', title: '確認公司是誰，以及誰有權代表它。',
+    body: '給法遵、公司治理與 IAM 團隊的導入工作台：即時查法人、預檢 CESR、整理文件雜湊與 QVI／技術交接包。原始 CESR 只留在瀏覽器記憶體。',
     leiTab: '01 · 法人 LEI', vleiTab: '02 · vLEI／CESR', live: 'LIVE · GLEIF GOLDEN COPY',
     leiTitle: '查驗法律實體公開紀錄', leiBody: '只把 20 字元 LEI 傳給 GLEIF 官方 API。這能確認法人紀錄，不代表持有人擁有有效 vLEI 或代表權。',
     leiLabel: 'Legal Entity Identifier', leiPlaceholder: '輸入 20 字元 LEI', lookup: '查詢 GLEIF', looking: '查詢中',
     entityStatus: '實體狀態', registrationStatus: 'LEI 狀態', jurisdiction: '法域', updated: 'Golden Copy 更新',
     recordVerified: 'LEI RECORD VERIFIED', recordReview: 'LEI RECORD NEEDS REVIEW', source: '官方資料來源',
     crypto: 'LOCAL CRYPTO · NO UPLOAD', vleiTitle: '驗證 vLEI CESR 憑證鏈',
-    vleiBody: '瀏覽器直接重算 BLAKE3 SAID、驗 Ed25519 KEL 簽章、ACDC 邊鏈、TEL 狀態與信任根；任何一項失敗就不允許工具執行。',
+    vleiBody: '瀏覽器直接重算 BLAKE3 SAID、驗 Ed25519 KEL 簽章、ACDC 邊鏈、TEL 狀態與信任根；任何一項失敗就無法進入正式整合。',
     production: 'Production · GLEIF root', fixture: 'Self-test · 官方 regression fixture', rootLabel: '信任根政策',
     pasteLabel: '貼上或載入 CESR（上限 128 KiB）', pastePlaceholder: '貼上 application/json+cesr 串流…',
     upload: '選擇本機檔案', useFixture: '載入官方測試 fixture', verify: '執行密碼學驗證', verifying: '驗證中',
     fixtureBoundary: '官方 regression fixture 使用測試信任根，不是真實企業憑證。切到 Production root 時應 fail closed。',
     productionBoundary: 'Production 模式的瀏覽器結果只是預檢；未經 live OOBI、witness 與後端 verifier 復驗，一律不授權執行。',
-    decision: 'POLICY DECISION', execution: '工具執行', allowed: '允許', blocked: '阻擋',
+    decision: 'PRECHECK DECISION', execution: '沙盒預檢', allowed: '通過', blocked: '阻擋',
     messages: 'CESR 訊息', credentials: '憑證', checks: '檢查', digest: 'Evidence Packet checksum（自我檢查，非簽章）',
     match: '與已查 LEI 一致', mismatch: '與已查 LEI 不一致', notChecked: '尚未用 GLEIF 交叉比對 LEI', noLei: '終端憑證未揭露可用 LEI', leiReview: 'GLEIF 紀錄不是 ACTIVE／ISSUED', staleLei: 'GLEIF 查詢已超過 15 分鐘，請重新查詢', ambiguousChain: '無法唯一確定終端憑證',
     download: '下載 Evidence Packet', noResult: '載入 CESR 後執行驗證，結果會顯示在這裡。', leiNoResult: '輸入 LEI 並查詢，官方法人紀錄會顯示在這裡。',
-    boundaries: '能力邊界', boundaryItems: ['TEL 狀態只代表輸入串流的時間點快照，不是即時撤銷查詢', '不驗 live OOBI／witness receipts', '不做 watcher duplicity 偵測', 'Evidence checksum 未簽章，不證明來源', '瀏覽器結果不會自動取得 Agent 授權'],
+    boundaries: '能力邊界', boundaryItems: ['TEL 狀態只代表輸入串流的時間點快照，不是即時撤銷查詢', '不驗 live OOBI／witness receipts', '不做 watcher duplicity 偵測', 'Evidence checksum 未簽章，不證明來源', '瀏覽器預檢通過不等於 production 授權'],
     recent: '最近查驗摘要', empty: '尚無查驗紀錄', deepDive: '訓練與技術深潛',
     pathwayLink: '情境故事庫', updateLink: '完整 vLEI 技術頁', privacy: 'ZERO STORAGE OPS',
     privacyBody: '只把結果摘要與 SHA-256 寫進本機 Trust Timeline；原始 CESR 不進 localStorage，也不使用 Vercel Blob。',
     gleifBoundary: '只查詢 GLEIF 官方 API，失敗時不改用模擬資料。',
-    iffBoundary: '當已查驗網址回傳 HTTP 402 時，Agent 行動閥門會執行 IFF x402 預檢；不會簽名或付款。',
+    iffBoundary: 'x402 付款要求屬於另一條獨立驗證路徑；vLEI 結果不能證明付款條件一致或商家會履約。',
     invalidLei: '請輸入 20 個英文字母或數字的 LEI。', leiPending: 'GLEIF 查詢尚未完成，請稍候再驗證憑證鏈。', fileTooLarge: '檔案超過 128 KiB 上限。', noCesr: '請先貼上、上傳或載入 CESR。',
   },
   en: {
-    back: 'Back to action policy', eyebrow: 'LIVE VERIFICATION WORKSPACE', title: 'Verify who is represented before deciding what may run.',
-    body: 'One workspace combines the live entity lookup from Trust Pathways with the cryptographic verifier from Update Trust. Raw CESR stays in browser memory and is never sent to AI.',
+    back: 'Back to enterprise overview', eyebrow: 'vLEI · ORGANIZATION AUTHORITY WORKSPACE', title: 'Confirm the company and who may represent it.',
+    body: 'An implementation workspace for compliance, governance, and IAM: live entity lookup, CESR preflight, local document digests, and a QVI / engineering handoff. Raw CESR remains in browser memory.',
     leiTab: '01 · Legal entity', vleiTab: '02 · vLEI / CESR', live: 'LIVE · GLEIF GOLDEN COPY',
     leiTitle: 'Verify a public legal-entity record', leiBody: 'Only the 20-character LEI is sent to the official GLEIF API. This verifies a legal record, not vLEI possession or representative authority.',
     leiLabel: 'Legal Entity Identifier', leiPlaceholder: 'Enter a 20-character LEI', lookup: 'Query GLEIF', looking: 'Looking up',
     entityStatus: 'Entity status', registrationStatus: 'LEI status', jurisdiction: 'Jurisdiction', updated: 'Golden Copy update',
     recordVerified: 'LEI RECORD VERIFIED', recordReview: 'LEI RECORD NEEDS REVIEW', source: 'Official source',
     crypto: 'LOCAL CRYPTO · NO UPLOAD', vleiTitle: 'Verify a vLEI CESR credential chain',
-    vleiBody: 'The browser recomputes BLAKE3 SAIDs and checks Ed25519 KEL signatures, ACDC edges, TEL status, and the trust root. Any failure blocks tool execution.',
+    vleiBody: 'The browser recomputes BLAKE3 SAIDs and checks Ed25519 KEL signatures, ACDC edges, TEL status, and the trust root. Any failure blocks production integration.',
     production: 'Production · GLEIF root', fixture: 'Self-test · official regression fixture', rootLabel: 'Trust-root policy',
     pasteLabel: 'Paste or load CESR (128 KiB maximum)', pastePlaceholder: 'Paste an application/json+cesr stream…',
     upload: 'Choose local file', useFixture: 'Load official test fixture', verify: 'Run cryptographic verification', verifying: 'Verifying',
     fixtureBoundary: 'The official regression fixture uses a test root and is not a real company credential. It should fail closed under the Production root.',
     productionBoundary: 'A Production browser result is preflight evidence only. Tool execution remains blocked until a backend verifier checks live OOBI and witness state.',
-    decision: 'POLICY DECISION', execution: 'Tool execution', allowed: 'Allowed', blocked: 'Blocked',
+    decision: 'PRECHECK DECISION', execution: 'Sandbox preflight', allowed: 'Passed', blocked: 'Blocked',
     messages: 'CESR messages', credentials: 'Credentials', checks: 'Checks', digest: 'Evidence Packet checksum (self-check, not a signature)',
     match: 'Matches the checked LEI', mismatch: 'Does not match the checked LEI', notChecked: 'GLEIF LEI cross-check not run', noLei: 'Terminal credential has no usable LEI', leiReview: 'GLEIF record is not ACTIVE / ISSUED', staleLei: 'GLEIF lookup is over 15 minutes old; query it again', ambiguousChain: 'A unique terminal credential cannot be resolved',
     download: 'Download Evidence Packet', noResult: 'Load CESR and run verification to see the result.', leiNoResult: 'Enter an LEI and query the official legal-entity record to see it here.',
-    boundaries: 'Capability boundaries', boundaryItems: ['TEL status is a point-in-time snapshot of the supplied stream, not a live revocation query', 'No live OOBI or witness receipts', 'No watcher duplicity detection', 'The Evidence checksum is unsigned and does not prove origin', 'A browser result never grants Agent authority'],
+    boundaries: 'Capability boundaries', boundaryItems: ['TEL status is a point-in-time snapshot of the supplied stream, not a live revocation query', 'No live OOBI or witness receipts', 'No watcher duplicity detection', 'The Evidence checksum is unsigned and does not prove origin', 'A browser preflight is not production authorization'],
     recent: 'Recent verification summaries', empty: 'No verification records yet', deepDive: 'Training and technical deep dives',
     pathwayLink: 'Scenario library', updateLink: 'Full vLEI technical page', privacy: 'ZERO STORAGE OPS',
     privacyBody: 'Only a summary and SHA-256 digest enter the local Trust Timeline. Raw CESR never enters localStorage or Vercel Blob.',
     gleifBoundary: 'Queries only the official GLEIF API and never falls back to synthetic data.',
-    iffBoundary: 'When a checked endpoint returns HTTP 402, the Agent action gate runs an IFF x402 preflight. It never signs or pays.',
+    iffBoundary: 'x402 payment requirements are a separate verification track. A vLEI result cannot prove payment consistency or merchant delivery.',
     invalidLei: 'Enter exactly 20 ASCII letters or digits.', leiPending: 'The GLEIF lookup is still pending. Wait before verifying the credential chain.', fileTooLarge: 'The file exceeds the 128 KiB limit.', noCesr: 'Paste, upload, or load CESR first.',
   },
   vi: {
-    back: 'Về chính sách hành động', eyebrow: 'LIVE VERIFICATION WORKSPACE', title: 'Xác minh đại diện cho ai trước khi quyết định được làm gì.',
-    body: 'Một không gian kết hợp tra cứu pháp nhân trực tiếp từ Trust Pathways với trình xác minh mật mã của Update Trust. CESR thô chỉ ở trong bộ nhớ trình duyệt và không gửi cho AI.',
+    back: 'Về tổng quan doanh nghiệp', eyebrow: 'vLEI · ORGANIZATION AUTHORITY WORKSPACE', title: 'Xác nhận công ty và ai có quyền đại diện.',
+    body: 'Không gian triển khai cho tuân thủ, quản trị và IAM: tra cứu pháp nhân trực tiếp, kiểm tra CESR, digest tài liệu cục bộ và gói bàn giao QVI / kỹ thuật. CESR thô chỉ ở bộ nhớ trình duyệt.',
     leiTab: '01 · Pháp nhân LEI', vleiTab: '02 · vLEI / CESR', live: 'LIVE · GLEIF GOLDEN COPY',
     leiTitle: 'Xác minh hồ sơ pháp nhân công khai', leiBody: 'Chỉ LEI 20 ký tự được gửi tới API chính thức của GLEIF. Kết quả không chứng minh quyền sở hữu vLEI hoặc quyền đại diện.',
     leiLabel: 'Legal Entity Identifier', leiPlaceholder: 'Nhập LEI 20 ký tự', lookup: 'Tra cứu GLEIF', looking: 'Đang tra cứu',
     entityStatus: 'Trạng thái pháp nhân', registrationStatus: 'Trạng thái LEI', jurisdiction: 'Pháp vực', updated: 'Golden Copy cập nhật',
     recordVerified: 'LEI RECORD VERIFIED', recordReview: 'LEI RECORD NEEDS REVIEW', source: 'Nguồn chính thức',
     crypto: 'LOCAL CRYPTO · NO UPLOAD', vleiTitle: 'Xác minh chuỗi chứng thư vLEI CESR',
-    vleiBody: 'Trình duyệt tính lại BLAKE3 SAID và kiểm tra chữ ký Ed25519 KEL, cạnh ACDC, trạng thái TEL cùng trust root. Bất kỳ lỗi nào cũng chặn thực thi.',
+    vleiBody: 'Trình duyệt tính lại BLAKE3 SAID và kiểm tra chữ ký Ed25519 KEL, cạnh ACDC, trạng thái TEL cùng trust root. Bất kỳ lỗi nào cũng chặn tích hợp production.',
     production: 'Production · GLEIF root', fixture: 'Tự kiểm tra · fixture chính thức', rootLabel: 'Chính sách trust root',
     pasteLabel: 'Dán hoặc tải CESR (tối đa 128 KiB)', pastePlaceholder: 'Dán luồng application/json+cesr…',
     upload: 'Chọn tệp cục bộ', useFixture: 'Tải fixture kiểm thử', verify: 'Chạy xác minh mật mã', verifying: 'Đang xác minh',
     fixtureBoundary: 'Regression fixture dùng trust root thử nghiệm, không phải chứng thư doanh nghiệp thật. Với Production root, nó phải fail closed.',
     productionBoundary: 'Kết quả Production trong trình duyệt chỉ là preflight. Thực thi vẫn bị chặn cho đến khi backend verifier kiểm tra live OOBI và witness.',
-    decision: 'POLICY DECISION', execution: 'Thực thi công cụ', allowed: 'Cho phép', blocked: 'Chặn',
+    decision: 'PRECHECK DECISION', execution: 'Kiểm tra sandbox', allowed: 'Đạt', blocked: 'Chặn',
     messages: 'Thông điệp CESR', credentials: 'Chứng thư', checks: 'Kiểm tra', digest: 'Checksum Evidence Packet (tự kiểm tra, không phải chữ ký)',
     match: 'Khớp LEI đã tra cứu', mismatch: 'Không khớp LEI đã tra cứu', notChecked: 'Chưa đối chiếu LEI qua GLEIF', noLei: 'Chứng thư cuối không có LEI hợp lệ', leiReview: 'Hồ sơ GLEIF không ACTIVE / ISSUED', staleLei: 'Tra cứu GLEIF đã quá 15 phút; hãy tra cứu lại', ambiguousChain: 'Không xác định được duy nhất chứng thư cuối',
     download: 'Tải Evidence Packet', noResult: 'Tải CESR và chạy xác minh để xem kết quả.', leiNoResult: 'Nhập LEI và tra cứu hồ sơ pháp nhân chính thức để xem tại đây.',
-    boundaries: 'Giới hạn năng lực', boundaryItems: ['Trạng thái TEL chỉ là ảnh chụp tại thời điểm của luồng được cung cấp, không phải truy vấn thu hồi trực tiếp', 'Không kiểm tra live OOBI / witness receipts', 'Không phát hiện duplicity qua watcher', 'Checksum Evidence không có chữ ký và không chứng minh nguồn', 'Kết quả trình duyệt không tự cấp quyền Agent'],
+    boundaries: 'Giới hạn năng lực', boundaryItems: ['Trạng thái TEL chỉ là ảnh chụp tại thời điểm của luồng được cung cấp, không phải truy vấn thu hồi trực tiếp', 'Không kiểm tra live OOBI / witness receipts', 'Không phát hiện duplicity qua watcher', 'Checksum Evidence không có chữ ký và không chứng minh nguồn', 'Preflight trình duyệt không phải ủy quyền production'],
     recent: 'Tóm tắt xác minh gần đây', empty: 'Chưa có bản ghi xác minh', deepDive: 'Đào sâu kỹ thuật và đào tạo',
     pathwayLink: 'Thư viện tình huống', updateLink: 'Trang kỹ thuật vLEI đầy đủ', privacy: 'ZERO STORAGE OPS',
     privacyBody: 'Chỉ tóm tắt và SHA-256 vào Trust Timeline cục bộ. CESR thô không vào localStorage hay Vercel Blob.',
     gleifBoundary: 'Chỉ truy vấn API GLEIF chính thức và không thay thế bằng dữ liệu mô phỏng.',
-    iffBoundary: 'Khi endpoint đã kiểm tra trả HTTP 402, cổng hành động Agent chạy IFF x402 preflight. Hệ thống không ký hay thanh toán.',
+    iffBoundary: 'Yêu cầu thanh toán x402 là luồng xác minh riêng. Kết quả vLEI không chứng minh tính nhất quán thanh toán hay việc giao hàng.',
     invalidLei: 'Nhập đúng 20 chữ cái hoặc chữ số.', leiPending: 'Tra cứu GLEIF chưa hoàn tất. Hãy chờ trước khi xác minh chuỗi chứng thư.', fileTooLarge: 'Tệp vượt quá giới hạn 128 KiB.', noCesr: 'Hãy dán, tải lên hoặc nạp CESR trước.',
   },
 } as const;
@@ -224,7 +224,7 @@ const TrustVerificationPanel: React.FC<TrustVerificationPanelProps> = ({
   const [vleiResult, setVleiResult] = useState<VleiViewResult | null>(null);
   const [evidencePacket, setEvidencePacket] = useState<Record<string, unknown> | null>(null);
 
-  const recent = useMemo(() => records.slice(0, 5), [records]);
+  const recent = useMemo(() => records.filter(record => record.kind !== 'X402_PREFLIGHT').slice(0, 5), [records]);
   const leiIsCurrent = leiRecord?.entityStatus === 'ACTIVE' && leiRecord.registrationStatus === 'ISSUED';
 
   useEffect(() => () => {
@@ -618,6 +618,8 @@ const TrustVerificationPanel: React.FC<TrustVerificationPanelProps> = ({
           </div>
         </section>
       )}
+
+      <VleiImplementationIntake language={language} gleifLookup={leiRecord ?? undefined} />
 
       <section className="vf-verification-footer-grid">
         <div className="vf-verification-boundaries"><span className="vf-agent-kicker">{t.boundaries}</span>{t.boundaryItems.map(item => <p key={item}><Info size={13} />{item}</p>)}</div>

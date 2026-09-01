@@ -11,10 +11,19 @@ separate even when they share infrastructure.
 | Personal anti-scam assistant (To C) | `/` | `App.tsx`, `components/consumer/`, consumer result components, `api/analyze.ts` | Public product |
 | Enterprise trust lab (To B) | `/business/` | `apps/business/`, `components/business/`, Agent and credential-response components, `api/agent-policy.ts` | Experimental |
 | Trust Pathways module | `/trust-pathways/` | `public/trust-pathways/` | Experimental, mixed synthetic/live evidence |
-| Update Trust module | `/update-trust/` | `public/update-trust/`, `services/vlei-verifier/` | Experimental, official fixture plus explicit simulation |
+| Update Trust module | `/update-trust/` | `public/update-trust/`, `services/vlei-verifier/` | Experimental, pinned upstream test fixture plus explicit simulation |
 
 Stable legacy URLs are intentionally preserved. The enterprise landing page is
 the canonical entry for all To B modules.
+
+The enterprise lab has two primary verification tracks. They can feed a shared
+policy gate and Evidence workflow, but they must not be merged into one trust
+score or described as proving the same thing:
+
+| Track | Verifies | Does not verify |
+|---|---|---|
+| **vLEI legal entity and authority** | The submitted legal-entity record, credential chain, represented terminal LEI, cryptographic relationships, and status visible in the supplied material | General trustworthiness, legal compliance, production-fresh revocation state by itself, or permission for an Agent action |
+| **x402 payment requirement** | Whether an x402 v2 requirement is supported by IFF evidence and matches the enterprise's stated network, asset, payee, and maximum amount | Merchant safety, delivery, wallet ownership in every case, payment authorization, settlement, or transaction success |
 
 ## To C invariants
 
@@ -31,19 +40,65 @@ the canonical entry for all To B modules.
 
 ## To B invariants
 
+### Shared enterprise boundaries
+
+- Guided adoption and technical integration use the same deterministic
+  verification core. The guided path may simplify input and provide examples;
+  it must not weaken a trust check or relabel simulation as live evidence.
+- An API, LLM workflow, or chatbot may consume bounded, secret-free Evidence
+  output. The model is not the verifier and must never receive raw supporting
+  documents, private keys, tokens, CESR retained beyond the in-memory check, or
+  authority to convert a preflight into execution.
+
 - Every entry point must display `EXPERIMENTAL` or an equivalent localized
   label and state that it is not for production decisions.
 - The local Agent grant demonstrates deterministic policy behavior. It is not a
   verified production Mandate.
 - `POST /api/agent-policy` returns a decision and evidence with
   `execution.status: "NOT_EXECUTED"`; it never operates a tool or payment.
-- Payment remains denied. IFF x402 preflight checks requirement consistency; it
-  does not establish payment safety or delivery.
-- vLEI, KERI, ACDC, and TEL claims must distinguish official fixtures, live
-  checks, proposed schemas, and simulation.
+- vLEI authority evidence and x402 payment evidence remain separate inputs to
+  policy. Passing one track can never compensate for a failure or missing check
+  in the other.
+- Evidence envelopes use an unsigned SHA-256 self-check unless an independent
+  signing channel is explicitly added. A digest is not source authenticity,
+  non-repudiation, an append-only timestamp, or a production audit log.
+- Never request or persist passwords, API tokens, wallet private keys, seed
+  phrases, OTPs, or unrelated personal records in an enterprise workspace.
+- Fail closed when a required verification layer is unavailable. Simulation
+  output must be visibly labeled and cannot silently replace live evidence.
+
+### vLEI legal-entity and representative-authority track
+
+**Submitted material**
+
+- A 20-character LEI is sent to the official GLEIF API for a bounded,
+  fail-closed Golden Copy lookup.
+- The operator pastes or chooses a CESR stream up to 128 KiB and explicitly
+  selects the production or regression-fixture trust root.
+- A separate implementation intake may hash up to 12 bounded local files and
+  export display labels, categories, MIME types, sizes, and SHA-256 digests for
+  QVI / engineering handoff. It does not upload content or validate document
+  truth, authority, or QVI acceptance.
 - Raw CESR input stays in browser memory. Persist only a bounded verification
   summary and digest; do not place raw credentials in local storage or AI
   prompts.
+
+**Output and mode labels**
+
+- The output separates GLEIF provenance, terminal-credential LEI resolution,
+  cryptographic checks, the machine-readable decision, limitations, and an
+  unsigned Enterprise Evidence Packet.
+- The live-data browser path queries GLEIF and evaluates the supplied stream
+  against the production root, but it remains a production preflight.
+- The self-test path uses a commit-pinned upstream regression fixture and test
+  root from `GLEIF-IT/vlei-verifier`.
+  It must say `FIXTURE`, `TEST`, or `SIMULATION`; it is not a credential held by
+  the named company and it is not production authorization.
+- vLEI, KERI, ACDC, and TEL claims must distinguish upstream test fixtures,
+  live checks, proposed schemas, and simulation.
+
+**Production gap and safety boundary**
+
 - Production vLEI verification requires an explicit root AID, official schema
   allow-listing, required-field and edge-shape checks, signature verification,
   TEL/KEL anchoring, and proof that each credential issuer controls its TEL
@@ -70,7 +125,50 @@ the canonical entry for all To B modules.
 - A successful browser verification is evidence, not authorization. It cannot
   promote a caller-supplied sandbox grant into a production Mandate without
   server-side re-verification and organization policy.
-- Fail closed when a required verification layer is unavailable.
+- VerifyFirst is not a QVI. It does not apply for, issue, sign, renew, or revoke
+  a vLEI. Any issuance or revocation shown in a demo is a sandbox event that
+  does not affect a real KEL, TEL, credential, or legal entity.
+
+### x402 payment-requirement consistency track
+
+**Submitted material**
+
+- The operator supplies an endpoint identifier and pastes or chooses an x402
+  v2 `Payment-Required` JSON object. The workspace also accepts the enterprise
+  policy fields `network`, `asset`, `payee`, and `maxAmount`.
+- In **Live** mode, URL credentials, query parameters, and fragments are
+  removed before the sanitized endpoint identifier and payment requirement go
+  through the VerifyFirst API to IFF. This workflow does not fetch the merchant
+  endpoint.
+- In **Simulation** mode, the workspace produces an explicitly labeled
+  synthetic IFF verdict and does not contact IFF. Simulation is for UI,
+  integration, and policy testing only.
+
+**Output and decision separation**
+
+- Preserve IFF's `consistent`, `diverged`, `stale`, and `unobserved` evidence
+  without converting it into a hidden safety score.
+- Display the IFF result independently from the local enterprise-policy
+  comparison. The latter checks the requirement's network, asset, payee, and
+  amount against the submitted policy.
+- Export may contain the sanitized source, input digest, IFF evidence, local
+  comparison, limitations, decision, and an unsigned SHA-256 self-check. It
+  must always record `execution.status: "NOT_EXECUTED"`.
+
+**Production gap and safety boundary**
+
+- Payment remains denied in the Agent policy gate. VerifyFirst does not hold a
+  wallet key, sign a transaction, move funds, facilitate settlement, or invoke
+  a payment execution adapter.
+- An x402 `consistent` result is evidence that the requirement agrees with the
+  available observation. It does not establish merchant safety, authorize
+  payment, guarantee settlement, or promise delivery.
+- `diverged`, `stale`, `unobserved`, malformed, and unavailable evidence must
+  not become an implicit pass. The interface must retain the specific state and
+  actionable reason.
+- Production adoption still requires enterprise authorization, budget and
+  payee governance, wallet / signer isolation, network-specific settlement,
+  monitoring, retention policy, and an execution layer outside VerifyFirst.
 
 ## Shared infrastructure
 

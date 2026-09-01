@@ -113,13 +113,13 @@
           <button id="rootFixture" class="active" data-root="fixture">ROOT · FIXTURE<br>test GLEIF AID</button>
           <button id="rootProduction" class="prod" data-root="production">ROOT · PRODUCTION<br>GLEIF External</button>
         </div>
-        <div id="chain" class="chain"><div class="node root"><small>00 · ROOT OF TRUST</small><b>尚未載入</b><span class="said">按「載入官方 fixture」開始</span></div></div>
+        <div id="chain" class="chain"><div class="node root"><small>00 · ROOT OF TRUST</small><b>尚未載入</b><span class="said">按「載入上游測試 fixture」開始</span></div></div>
         <p class="disclaimer">fixture 由 GLEIF-IT/vlei-verifier 測試套件產生：root 為測試 AID，LEI 雖存在於 Global LEI Index，但憑證非真實 QVI 簽發。Agent 委任憑證為本專案提案，非 GLEIF 官方憑證類型。</p>
       </aside>
 
       <article class="panel main-panel">
         <section class="step" id="stepFixture">
-          <div class="step-head"><div><small>01 · OFFICIAL FIXTURE · PINNED COMMIT 5850051</small><h3>載入 GLEIF 官方 regression CESR 串流</h3><p>同一份 <span class="mono">tests/data/credential/credential.cesr</span> 也是 Trust Pathways 送進 live keripy verifier 的檔案。本地副本與 GitHub raw 逐位元比對 SHA-256，兩者皆顯示。</p></div><button id="loadFixture" class="btn">載入官方 fixture</button></div>
+          <div class="step-head"><div><small>01 · UPSTREAM TEST FIXTURE · PINNED COMMIT 5850051</small><h3>載入固定版本的 GLEIF-IT regression CESR 測試串流</h3><p>同一份 <span class="mono">tests/data/credential/credential.cesr</span> 也是 Trust Pathways 送進 live keripy verifier 的測試檔案。本地副本與 GitHub raw 逐位元比對 SHA-256，兩者皆顯示；不代表正式 vLEI 憑證或 GLEIF 背書。</p></div><button id="loadFixture" class="btn">載入上游測試 fixture</button></div>
           <div class="stats"><div class="stat"><small>CESR messages</small><b id="statMessages">–</b></div><div class="stat"><small>KEL events (icp/ixn)</small><b id="statKel">–</b></div><div class="stat"><small>TEL events (vcp/iss)</small><b id="statTel">–</b></div><div class="stat"><small>ACDC credentials</small><b id="statAcdc">–</b></div><div class="stat"><small>Controller AIDs</small><b id="statAids">–</b></div></div>
           <div id="fixtureLocal" class="source"><i></i><span>LOCAL COPY · 尚未載入</span></div>
           <div id="fixtureRemote" class="source"><i></i><span>GITHUB RAW · 尚未比對</span></div>
@@ -177,7 +177,7 @@
           <div class="step-head"><div><small>06 · EVIDENCE · AUDIT TIMELINE + PACKET</small><h3>每一步都留下可重算的證據</h3><p>時間軸記錄真實與模擬事件的 SAID；Evidence Packet 含 fixture 雜湊、瀏覽器驗證報告、委任 ACDC、模擬 TEL 事件與決策，任何人可用同一份 said.js 重新驗證。</p></div><button id="downloadPacket" class="btn secondary" disabled>下載 Evidence Packet</button></div>
           <div id="events" class="events"></div>
           <div class="packet"><div><small id="packetBadge">PACKET · NOT BUILT</small><b>Evidence Packet 摘要</b><p id="packetDigest">尚未產生；建立後顯示 SHA-256。</p></div></div>
-          <div class="backend"><div class="backend-head"><b>LEVEL 3 · LIVE KERIPY VERIFIER（選用）</b><span id="backendState" class="pill warn">NOT CHECKED</span></div><p class="disclaimer" style="margin:0 0 8px">同一份 fixture 送入已部署的 GLEIF-IT/vlei-verifier 容器（production root、revocation check 開啟）。因 fixture 的 root 是測試 AID，production verifier 預期拒絕——那是正確行為，本頁不會用合成 VALID 掩蓋。後端目前以 VERIFIER_MODE=test 運行以便瀏覽器免簽章輪詢（witness 允許清單在此模式下不強制）。cold start 可能長達 90 秒。</p><button id="sendBackend" class="btn ghost" disabled>送入 live verifier</button><div id="backendFlow" class="backend-flow"><span>HEALTH · PENDING</span><span>PRESENTATION · PENDING</span><span>AUTHORIZATION · PENDING</span></div><p id="backendDetail" class="backend-detail">PUT /presentations/{said} → GET /authorizations/{aid}</p></div>
+          <div class="backend"><div class="backend-head"><b>LEVEL 3 · LIVE DEMO KERIPY BACKEND（TEST MODE）</b><span id="backendState" class="pill warn">NOT CHECKED</span></div><p class="disclaimer" style="margin:0 0 8px">同一份 fixture 送入公開的 GLEIF-IT/vlei-verifier demo 容器，以 GLEIF production root 政策及 revocation check 進行挑戰。fixture 的 root 是測試 AID，因此 demo backend 預期拒絕。服務以 <code>VERIFIER_MODE=test</code> 供瀏覽器免簽章輪詢，witness allowlist 不作為正式控制，KERI／TEL authorization state 也不耐久；公開 Vercel URL 不是自架 production，結果不可用於正式判定。cold start 可能長達 90 秒。</p><button id="sendBackend" class="btn ghost" disabled>送入 live demo backend</button><div id="backendFlow" class="backend-flow"><span>HEALTH · PENDING</span><span>PRESENTATION · PENDING</span><span>AUTHORIZATION · PENDING</span></div><p id="backendDetail" class="backend-detail">DEMO ONLY · PUT /presentations/{said} → GET /authorizations/{aid}</p></div>
         </section>
       </article>
     </section>
@@ -218,7 +218,7 @@
         <a href="https://www.gleif.org/en/organizational-identity/introducing-the-verifiable-lei-vlei" target="_blank" rel="noopener">GLEIF · vLEI 官方介紹 ↗</a>
         <a href="https://www.gleif.org/en/organizational-identity/introducing-the-verifiable-lei-vlei/gleif-ebook-the-vlei-introducing-digital-i-d-for-organizations-everywhere" target="_blank" rel="noopener">GLEIF eBook ↗</a>
         <a href="https://www.gleif.org/en/organizational-identity/introducing-the-verifiable-lei-vlei/introducing-the-vlei-ecosystem-governance-framework" target="_blank" rel="noopener">vLEI Ecosystem Governance Framework ↗</a>
-        <a href="https://github.com/GLEIF-IT/vlei-trainings/tree/main/markdown" target="_blank" rel="noopener">GLEIF vlei-trainings ↗</a>
+        <a href="https://github.com/GLEIF-IT/vlei-trainings/tree/4af87dc13b3f145c4d078448b1d6ec5a1f4bef25/markdown" target="_blank" rel="noopener">GLEIF vlei-trainings（固定版本）↗</a>
         <a href="https://github.com/GLEIF-IT/vlei-verifier" target="_blank" rel="noopener">GLEIF-IT/vlei-verifier（fixture 來源）↗</a>
         <a href="https://github.com/GLEIF-IT/vLEI-schema" target="_blank" rel="noopener">GLEIF-IT/vLEI-schema ↗</a>
         <a href="https://www.gleif.org/en/newsroom/blog/why-ai-agents-need-verifiable-organizational-identity" target="_blank" rel="noopener">GLEIF Blog 2026-08-25 · AI Agents ↗</a>
@@ -300,9 +300,9 @@
         $('#statMessages').textContent = keds.length; $('#statKel').textContent = keds.filter(k => ['icp', 'ixn', 'rot', 'dip'].includes(k.t)).length; $('#statTel').textContent = keds.filter(k => ['vcp', 'iss', 'rev'].includes(k.t)).length; $('#statAcdc').textContent = keds.filter(k => k.v?.startsWith('ACDC')).length; $('#statAids').textContent = new Set(keds.filter(k => k.t === 'icp').map(k => k.i)).size;
         local.className = corrupt ? 'source error' : 'source ok'; local.querySelector('span').textContent = `LOCAL COPY · ${Math.round(text.length / 1024)} KB · sha256 ${state.sha.local}${corrupt ? ` · ${corrupt} MESSAGE(S) FAILED TO PARSE` : ''}`;
         $('#holderShort').textContent = short(FIXTURE.holderAid);
-        audit('Official fixture parsed', 'FIXTURE_LOADED', `${keds.length} CESR messages · pinned commit ${FIXTURE.commit.slice(0, 7)} · sha256 ${state.sha.local.slice(0, 16)}…`);
+        audit('Upstream test fixture parsed', 'FIXTURE_LOADED', `${keds.length} CESR messages · pinned commit ${FIXTURE.commit.slice(0, 7)} · sha256 ${state.sha.local.slice(0, 16)}…`);
         renderChain(null); $('#verifyBrowser').disabled = false; $('#sendBackend').disabled = false; button.textContent = '重新載入 fixture';
-        toast('官方 fixture 已解析');
+        toast('上游測試 fixture 已解析');
         remote.className = 'source'; remote.querySelector('span').textContent = 'GITHUB RAW · 正在比對…';
         try {
           const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 8000);
@@ -517,11 +517,11 @@
     function setBackendStep(index, cls, label) { const step = $('#backendFlow')?.children[index]; if (!step) return; step.className = cls; step.textContent = label; }
     async function sendBackend() {
       const button = $('#sendBackend'), stateEl = $('#backendState'), detail = $('#backendDetail'); if (button.disabled) return;
-      button.disabled = true; button.textContent = '啟動 verifier（cold start 最長 90 秒）…'; stateEl.className = 'pill warn'; stateEl.textContent = 'WARMING';
+      button.disabled = true; button.textContent = '啟動 demo backend（cold start 最長 90 秒）…'; stateEl.className = 'pill warn'; stateEl.textContent = 'WARMING';
       [0, 1, 2].forEach(i => setBackendStep(i, '', `${['HEALTH', 'PRESENTATION', 'AUTHORIZATION'][i]} · PENDING`));
       try {
         const health = await fetchWithTimeout(`${BACKEND.base}/health`, {}, 90000); if (!health.ok) throw new Error(`HEALTH_HTTP_${health.status}`);
-        setBackendStep(0, 'ok', 'HEALTH · 200 READY'); stateEl.className = 'pill ok'; stateEl.textContent = 'BACKEND LIVE';
+        setBackendStep(0, 'ok', 'HEALTH · 200 READY'); stateEl.className = 'pill ok'; stateEl.textContent = 'DEMO BACKEND LIVE';
         const cesr = await (await fetch(FIXTURE.local, { cache: 'no-store' })).text();
         const presentation = await fetchWithTimeout(`${BACKEND.base}/presentations/${BACKEND.said}`, { method: 'PUT', headers: { 'Content-Type': 'application/json+cesr' }, body: cesr }, 45000);
         const bodyText = await presentation.text(); let body; try { body = JSON.parse(bodyText); } catch { body = { msg: bodyText }; }
@@ -533,17 +533,17 @@
             if (auth.status === 404) { setBackendStep(2, '', 'AUTHORIZATION · PENDING'); continue; }
             const authText = await auth.text(); let authBody; try { authBody = JSON.parse(authText); } catch { authBody = { msg: authText }; }
             const valid = auth.status === 200;
-            setBackendStep(2, valid ? 'ok' : 'invalid', valid ? 'AUTHORIZATION · VALID' : `AUTHORIZATION · HTTP ${auth.status}`); stateEl.className = `pill ${valid ? 'ok' : 'bad'}`; stateEl.textContent = valid ? 'VALID' : auth.status === 401 ? 'INVALID' : 'FAIL CLOSED';
-            detail.textContent = `${auth.status} · ${authBody.msg || JSON.stringify(authBody)}`; audit('Live keripy verifier responded', valid ? 'BACKEND_VALID' : `BACKEND_HTTP_${auth.status}`, detail.textContent, valid ? '' : 'deny'); return;
+            setBackendStep(2, valid ? 'ok' : 'invalid', valid ? 'AUTHORIZATION · DEMO VALID' : `AUTHORIZATION · HTTP ${auth.status}`); stateEl.className = `pill ${valid ? 'ok' : 'bad'}`; stateEl.textContent = valid ? 'DEMO VALID' : auth.status === 401 ? 'INVALID' : 'FAIL CLOSED';
+            detail.textContent = `${auth.status} · ${authBody.msg || JSON.stringify(authBody)} · test-mode demo result，非正式授權`; audit('Live demo keripy backend responded', valid ? 'DEMO_BACKEND_VALID' : `DEMO_BACKEND_HTTP_${auth.status}`, detail.textContent, valid ? '' : 'deny'); return;
           }
           throw new Error('AUTHORIZATION_TIMEOUT');
         }
         setBackendStep(1, 'invalid', `PRESENTATION · ${presentation.status} REJECTED`); setBackendStep(2, 'invalid', 'AUTHORIZATION · NOT GRANTED'); stateEl.className = 'pill bad'; stateEl.textContent = 'INVALID';
-        detail.textContent = `真實後端拒絕：${body.msg || JSON.stringify(body)} · fixture 的 root 為測試 AID，production verifier 正確拒絕。`;
-        audit('Live keripy verifier rejected fixture', `BACKEND_HTTP_${presentation.status}`, detail.textContent, 'deny');
+        detail.textContent = `Demo backend 拒絕：${body.msg || JSON.stringify(body)} · fixture 的 root 為測試 AID，production-root 政策正確拒絕；非正式授權。`;
+        audit('Live demo keripy backend rejected fixture', `DEMO_BACKEND_HTTP_${presentation.status}`, detail.textContent, 'deny');
       } catch (error) {
-        stateEl.className = 'pill bad'; stateEl.textContent = 'FAIL CLOSED'; detail.textContent = `${error.name === 'AbortError' ? 'BACKEND_TIMEOUT' : error.message} · 未產生任何 VALID 判定。`; audit('Live keripy verifier unavailable', 'BACKEND_FAIL_CLOSED', detail.textContent, 'deny');
-      } finally { button.disabled = false; button.textContent = '重新送入 live verifier'; }
+        stateEl.className = 'pill bad'; stateEl.textContent = 'FAIL CLOSED'; detail.textContent = `${error.name === 'AbortError' ? 'BACKEND_TIMEOUT' : error.message} · 未產生任何 VALID 判定。`; audit('Live demo keripy backend unavailable', 'DEMO_BACKEND_FAIL_CLOSED', detail.textContent, 'deny');
+      } finally { button.disabled = false; button.textContent = '重新送入 live demo backend'; }
     }
     $('#sendBackend').onclick = sendBackend;
 

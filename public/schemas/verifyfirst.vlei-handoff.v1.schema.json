@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://verify1st.tw/schemas/verifyfirst.vlei-handoff.v1.schema.json",
+  "title": "VerifyFirst vLEI Implementation Handoff Draft v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generatedAt", "submissionStatus", "issuerStatus", "documentCategoriesStandard", "case", "legalEntity", "documentManifest", "documentHandling", "readiness", "productionGaps", "limitations", "officialDirectory"],
+  "properties": {
+    "schema": { "const": "verifyfirst.vlei-handoff.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "submissionStatus": { "const": "DRAFT_NOT_SUBMITTED" },
+    "issuerStatus": { "const": "NOT_ISSUED" },
+    "documentCategoriesStandard": { "const": "VERIFYFIRST_INTERNAL" },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "owner", "targetSystem", "purpose"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "owner": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "targetSystem": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "purpose": { "type": "string", "minLength": 1, "maxLength": 500 }
+      }
+    },
+    "legalEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lei", "gleifLookup"],
+      "properties": {
+        "lei": { "type": ["string", "null"], "pattern": "^[A-Z0-9]{20}$" },
+        "gleifLookup": {
+          "type": "object",
+          "required": ["status", "freshness"],
+          "properties": {
+            "status": { "enum": ["CURRENT_ACTIVE_RECORD", "RECORD_REVIEW_REQUIRED", "STALE", "INVALID_TIMESTAMP", "NOT_CHECKED"] },
+            "sourceUrl": { "type": "string", "format": "uri" },
+            "checkedAt": { "type": "string", "format": "date-time" },
+            "lookupDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+            "entityStatus": { "type": "string" },
+            "registrationStatus": { "type": "string" },
+            "goldenCopyPublishDate": { "type": ["string", "null"] },
+            "recordLastUpdateDate": { "type": ["string", "null"] },
+            "freshness": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["policy", "maxAgeMilliseconds", "ageMilliseconds", "passed"],
+              "properties": {
+                "policy": { "const": "LOOKUP_AGE_MAX_15_MINUTES" },
+                "maxAgeMilliseconds": { "const": 900000 },
+                "ageMilliseconds": { "type": ["integer", "null"] },
+                "passed": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "documentManifest": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type", "category", "size", "digest", "checkedAt"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "type": { "type": "string", "maxLength": 255 },
+          "category": { "enum": ["LEGAL_ENTITY_IDENTITY", "OWNERSHIP_RELATIONSHIP", "REPRESENTATIVE_IDENTITY", "REPRESENTATIVE_AUTHORITY", "ROLE_EVIDENCE", "OTHER"] },
+          "size": { "type": "integer", "minimum": 0, "maximum": 2097152 },
+          "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "checkedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "documentHandling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["localHashingOnly", "uploaded", "contentIncluded", "authenticityVerified", "browserClockTrusted", "mimeTypeAuthoritative"],
+      "properties": {
+        "localHashingOnly": { "const": true },
+        "uploaded": { "const": false },
+        "contentIncluded": { "const": false },
+        "authenticityVerified": { "const": false },
+        "browserClockTrusted": { "const": false },
+        "mimeTypeAuthoritative": { "const": false }
+      }
+    },
+    "readiness": { "type": "object" },
+    "productionGaps": { "type": "array", "items": { "type": "object" } },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "officialDirectory": { "const": "https://www.gleif.org/en/organizational-identity/get-an-lei-vlei/get-a-vlei" }
+  }
+}

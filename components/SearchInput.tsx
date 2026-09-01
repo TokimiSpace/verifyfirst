@@ -36,6 +36,10 @@ const TRANSLATIONS = {
     ocrRunning: 'Reading text from screenshot...',
     ocrDone: 'Text extracted — ready to check',
     ocrFailed: 'Could not read text — please type it manually',
+    consoleLabel: 'Submit content for evidence checks',
+    consoleMeta: 'External data flow',
+    dataNotice: 'When you submit, the text or URL goes to the VerifyFirst API, Gemini, and enabled public-check services. Results may remain in bounded server memory for up to 72 hours. Screenshot OCR runs in this browser; only extracted text is submitted. Never paste passwords, OTPs, full card or ID numbers, seed phrases, or secret keys.',
+    privacyLink: 'Data processing notice',
   },
   'zh-TW': {
     placeholder: '貼上連結、訊息、電話或帳號...',
@@ -61,6 +65,10 @@ const TRANSLATIONS = {
     ocrRunning: '正在辨識截圖文字...',
     ocrDone: '文字已擷取，可以開始檢查',
     ocrFailed: '無法辨識文字，請手動輸入',
+    consoleLabel: '送出內容進行公開證據查核',
+    consoleMeta: '內容會傳至外部服務',
+    dataNotice: '送出後，文字或網址會傳至 VerifyFirst API、Gemini 與已啟用的公開查核服務；結果可能在伺服器的限量記憶體保留最多 72 小時。截圖 OCR 在此瀏覽器執行，只會送出擷取文字。請勿貼密碼、OTP、完整卡號／證件號碼、助記詞或秘密金鑰。',
+    privacyLink: '資料處理說明',
   },
   vi: {
     placeholder: 'Dán liên kết, tin nhắn, số điện thoại hoặc tài khoản...',
@@ -86,6 +94,10 @@ const TRANSLATIONS = {
     ocrRunning: 'Đang đọc văn bản từ ảnh chụp màn hình...',
     ocrDone: 'Đã trích xuất văn bản — sẵn sàng kiểm tra',
     ocrFailed: 'Không thể đọc văn bản — vui lòng nhập thủ công',
+    consoleLabel: 'Gửi nội dung để kiểm tra bằng chứng công khai',
+    consoleMeta: 'Dữ liệu được gửi ra ngoài',
+    dataNotice: 'Khi gửi, văn bản hoặc URL sẽ tới API VerifyFirst, Gemini và các dịch vụ kiểm tra công khai đã bật; kết quả có thể nằm trong bộ nhớ máy chủ giới hạn tối đa 72 giờ. OCR ảnh chạy trong trình duyệt này và chỉ văn bản trích xuất được gửi đi. Không dán mật khẩu, OTP, số thẻ/giấy tờ đầy đủ, cụm từ khôi phục hoặc khóa bí mật.',
+    privacyLink: 'Thông báo xử lý dữ liệu',
   },
 };
 
@@ -238,8 +250,13 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
           const langs = language === 'vi' ? 'vie+eng' : 'chi_tra+eng';
           // Dynamic import keeps tesseract.js out of the initial bundle —
           // it's only needed when someone actually uses screenshot OCR.
-          const { createWorker } = await import('tesseract.js');
-          const worker = await createWorker(langs);
+          const { createWorker, OEM } = await import('tesseract.js');
+          const workerOptions = {
+            ...(import.meta.env.VITE_TESSERACT_WORKER_PATH ? { workerPath: import.meta.env.VITE_TESSERACT_WORKER_PATH } : {}),
+            ...(import.meta.env.VITE_TESSERACT_CORE_PATH ? { corePath: import.meta.env.VITE_TESSERACT_CORE_PATH } : {}),
+            ...(import.meta.env.VITE_TESSERACT_LANG_PATH ? { langPath: import.meta.env.VITE_TESSERACT_LANG_PATH } : {}),
+          };
+          const worker = await createWorker(langs, OEM.LSTM_ONLY, workerOptions);
           const { data } = await worker.recognize(dataUrl);
           await worker.terminate();
           const extracted = data.text.trim();
@@ -353,9 +370,9 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
         <div className="vf-console-head">
           <div className="vf-console-label">
             <span className="vf-live-dot" aria-hidden="true" />
-            <span>{language === 'zh-TW' ? '把內容放進沙盒' : language === 'vi' ? 'Cho nội dung vào hộp cát' : 'Put content in the sandbox'}</span>
+            <span>{t.consoleLabel}</span>
           </div>
-          <span className="vf-console-meta">Content isolation</span>
+          <span className="vf-console-meta">{t.consoleMeta}</span>
         </div>
 
         <div className="vf-console-body">
@@ -481,6 +498,10 @@ const SearchInput: React.FC<SearchInputProps> = ({ onSearch, isLoading, language
           </div>
         )}
           </form>
+
+          <p className={`vf-search-data-notice ${isSeniorMode ? 'is-senior' : ''}`}>
+            {t.dataNotice} <a href="/privacy/" target="_blank" rel="noreferrer">{t.privacyLink}</a>
+          </p>
 
       {/* Paste hint — shown when no image and no input */}
       {!image && !input.trim() && !isSeniorMode && (

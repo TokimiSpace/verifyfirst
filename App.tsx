@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Analytics } from '@vercel/analytics/react';
+import OptionalAnalytics from './components/OptionalAnalytics';
 import { TruthGuardAnalysis, LoadingState, Language, InputType } from './types';
 import { analyzeTruthGuard, APIError } from './services/geminiService';
 import { buildLocalSafetyFallback } from './services/localSafetyFallback';
@@ -492,7 +492,7 @@ const App: React.FC = () => {
 
   return (
     <div className={`vf-app ${isSeniorMode ? 'senior-mode text-xl' : ''}`}>
-      <Analytics />
+      <OptionalAnalytics />
 
       {/* Consumer header */}
       <header className="vf-header">
@@ -960,6 +960,8 @@ const App: React.FC = () => {
               <CheckCircle2 className="w-3 h-3" />
               <span>Open source</span>
             </a>
+            <span className="text-gray-700">·</span>
+            <a href="/privacy/" className="flex items-center gap-1 hover:text-gray-300 transition-colors">資料處理說明</a>
             <span className="text-gray-700">·</span>
             <a href="/business/" className="flex items-center gap-1 hover:text-gray-300 transition-colors"><Building2 className="w-3 h-3" /><span>{landing.businessLabel}</span></a>
           </div>

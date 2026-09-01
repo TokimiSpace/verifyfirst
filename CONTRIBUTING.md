@@ -18,7 +18,7 @@ By participating, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md
 ### Pull Requests
 
 1. Fork the repository and create your branch from `main`
-2. Run `npm install` to install dependencies
+2. Run `npm ci` to install the reviewed lockfile exactly
 3. Read [Product Boundaries](docs/PRODUCT_BOUNDARIES.md) and identify whether
    the change affects To C, To B, or shared infrastructure
 4. Make your changes following the code style
@@ -31,9 +31,9 @@ By participating, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md
 ```bash
 git clone https://github.com/your-username/cryptotruth.git
 cd cryptotruth
-npm install
+npm ci
 cp .env.example .env.local
-# Add your GEMINI_API_KEY to .env.local
+# Add GEMINI_API_KEY only when testing live To C AI analysis
 npm run dev
 ```
 
@@ -41,7 +41,8 @@ npm run dev
 
 - Use TypeScript for all code
 - Use functional React components with hooks
-- Use Tailwind CSS for styling
+- Reuse the design tokens and component classes in `styles.css`; keep To C and
+  To B responsive and accessible in Traditional Chinese, English, and Vietnamese
 - Write clear commit messages
 
 ## Project Structure

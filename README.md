@@ -15,11 +15,27 @@ numbers, ID numbers, or secret keys.
 
 The To B lab contains the deterministic Agent policy gate, credential-incident
 response, Trust Pathways scenarios, vLEI lifecycle verifier, Evidence Packets,
-revocation, and IFF x402 preflight. Every To B entry is marked experimental and
+revocation, and IFF x402 preflight. Its two primary controls answer different
+questions: vLEI checks legal-entity and representative-authority evidence;
+x402 checks whether a payment requirement matches independent evidence and the
+enterprise's stated payment policy. They remain separate instead of being
+collapsed into one trust score. Every To B entry is marked experimental and
 states its trust boundary.
 
 See [Product Boundaries](docs/PRODUCT_BOUNDARIES.md) before extending or
 deploying either surface.
+
+VerifyFirst's original code is open source under MIT; redistributed fixtures
+and upstream verifier/schema material retain their documented Apache-2.0 terms.
+The enterprise verification core does not require a private LLM service:
+deterministic policy, GLEIF lookup, local CESR/document hashing, simulation, and
+Evidence export remain inspectable and self-hostable. See
+[Self-hosting](docs/SELF_HOSTING.md) and
+[Third-party notices](THIRD_PARTY_NOTICES.md).
+
+Every pull request runs the same typecheck, test, and production-build gates
+documented below. Dependency update proposals are generated from the reviewed
+`package-lock.json`.
 
 ## Features
 
@@ -30,7 +46,8 @@ deploying either surface.
 - **Multi-input analysis** — SMS/text, suspicious URLs (including bare domains),
   phone numbers, accounts, screenshots with client-side OCR, and `.txt` files
 - **Evidence before AI** — RDAP, Google Safe Browsing, ScamSniffer,
-  VirusTotal, DNS, Cofacts, and live URL observation
+  VirusTotal, DNS, and Cofacts; active server-side URL observation is a
+  separately enabled operator feature and is off by default
 - **Safety conversation** — turns the current result and incident stage into
   immediate, multilingual recovery, verification, and reporting steps; chat
   stays in page memory and never requests credentials
@@ -57,9 +74,74 @@ deploying either surface.
   `/update-trust/`
 - **IFF x402 preflight** — compares an observed payment requirement with
   independent evidence; it never holds keys, signs, or pays
+
+#### Two enterprise controls, two different decisions
+
+| Control | Business question | Typical owner | Submission | Result |
+|---|---|---|---|---|
+| **vLEI legal entity and authority** | Which legal entity is represented, and does the submitted credential chain support that relationship? | Compliance, legal-entity governance, IAM, security | A 20-character LEI, a pasted or local CESR stream up to 128 KiB, and an explicit production or fixture trust root | GLEIF record provenance, cryptographic checks, terminal-LEI cross-check, decision code, limitations, and unsigned Evidence JSON |
+| **x402 payment requirement** | Does the received x402 v2 requirement agree with IFF evidence and this enterprise's allowed network, asset, payee, and maximum amount? | Finance, treasury, procurement, payment engineering | A sanitized endpoint URL plus pasted or local `Payment-Required` JSON, then `network`, `asset`, `payee`, and `maxAmount` policy fields | IFF evidence and the local enterprise-policy decision shown separately, divergence details, limitations, and unsigned Evidence JSON |
+
+Neither control executes the action it evaluates. A vLEI result does not make
+VerifyFirst a QVI or allow it to issue a vLEI. An x402 `consistent` result does
+not mean that a merchant is safe, that payment is authorized, or that delivery
+will occur.
+
+Both controls support two adoption depths. **Guided adoption** uses labeled
+fields, official lookups, local document digests, pinned examples, and
+downloadable handoff packages without requiring an internal engineering team.
+**Technical integration** accepts CESR or x402 JSON, runs live checks, and
+returns machine-readable Evidence that an existing API, LLM workflow, or
+chatbot may consume. Secrets and raw supporting documents never belong in the
+LLM path.
+
+##### vLEI modes and production gap
+
+- **Live-data preflight** queries the official GLEIF Golden Copy for the LEI
+  and verifies the supplied CESR in the browser under the selected production
+  root. Raw CESR remains in browser memory; only a bounded summary and digest
+  may enter the local Trust Timeline.
+- **Simulation / self-test** uses a commit-pinned upstream regression fixture
+  from `GLEIF-IT/vlei-verifier` and its test trust root. The interface must
+  label this result as fixture or sandbox evidence, never as a real company's
+  credential, formal issuance, endorsement, or production authorization.
+- **Production still requires** live OOBI resolution, witness receipts,
+  watcher-based duplicity detection, current TEL / revocation retrieval, a
+  backend verifier, the organization's root allow-list and policy, and an
+  independently protected or signed evidence channel.
+- **Issuance boundary:** VerifyFirst verifies submitted material and produces
+  review evidence. It does not apply for, issue, sign, renew, or revoke a vLEI,
+  and it does not claim QVI status.
+
+##### x402 modes and production gap
+
+- **Live preflight** accepts an endpoint identifier and x402 v2
+  `Payment-Required` JSON. Before the requirement is sent through the
+  VerifyFirst API to IFF, URL credentials, query parameters, and fragments are
+  removed. The workspace does not fetch the merchant endpoint in this flow.
+- **Simulation** produces clearly labeled synthetic IFF verdicts for training
+  and policy testing. It does not contact IFF and must not be presented as an
+  external observation.
+- **Outputs stay separate:** IFF may report `consistent`, `diverged`, `stale`,
+  or `unobserved`; VerifyFirst independently compares the requirement with the
+  submitted network, asset, payee, and maximum-amount policy. The Evidence JSON
+  carries an unsigned SHA-256 self-check and always records
+  `execution.status: "NOT_EXECUTED"`.
+- **Production still requires** enterprise authorization, budget and payee
+  governance, wallet / signer isolation, settlement handling, monitoring and
+  an execution adapter outside VerifyFirst. IFF unavailability or invalid
+  evidence must not be converted into a passing decision.
+- **Payment boundary:** VerifyFirst never accepts a private key, signs a
+  transaction, moves funds, or guarantees merchant safety or delivery.
+
+Do not submit passwords, API tokens, wallet private keys, seed phrases, OTPs,
+or personal records to either workspace. Submission files should contain only
+the credential or payment-requirement material needed for the selected check.
+
 ## Tech Stack
 
-- **Frontend**: React 19, TypeScript, Tailwind CSS, Vite
+- **Frontend**: React 19, TypeScript, build-time Tailwind utilities plus
+  repository-owned CSS design tokens, Vite
 - **AI**: Google Gemini 2.5 Flash with Google Search grounding
 - **Backend**: Vercel Serverless Functions
 - **Caching**: bounded 72-hour warm-instance memory cache; no metered storage operations
@@ -68,17 +150,48 @@ deploying either surface.
 ## How an Analysis Works
 
 1. Input is classified (URL / SMS text / phone) and sanitized
-2. Known example chips and allowlisted domains short-circuit with canned
-   responses (zero upstream quota)
+2. Known example chips short-circuit with canned responses (zero upstream
+   quota). An exact operator-listed VerifyFirst hostname adds an identity hint
+   only; it never bypasses checks or creates a safety verdict
 3. Objective facts are gathered in parallel: RDAP, Safe Browsing, ScamSniffer,
-   VirusTotal, DNS, Cofacts, plus live page observation for URLs. An x402
-   `402` response is preflighted through IFF before it is surfaced.
+   VirusTotal, DNS, and Cofacts. If the deployer explicitly enables server-side
+   page observation, URLs are also fetched under a restricted-egress
+   requirement. An observed x402 `402` response is preflighted through IFF
+   before it is surfaced.
 4. Gemini analyzes with search grounding, receiving the facts as ground truth
 5. Code-level post-processing: blocklist verdict floors, low-evidence
    normalization, and PII masking
 6. The result enters a bounded 72-hour warm-instance memory cache. Cold starts
    begin empty, intentionally trading shared persistence for zero metered
    storage operations
+
+### To C data flow and retention
+
+The To C form is an external analysis flow, not a local content-isolation
+sandbox. When a user submits:
+
+- The validated text, phone number, or URL goes to `POST /api/analyze`.
+- Gemini receives that input plus the gathered evidence. Cofacts may receive up
+  to the first 100 characters; enabled Safe Browsing receives the URL;
+  VirusTotal, RDAP, and DNS receive the domain or hostname. ScamSniffer lists
+  are downloaded by the server rather than receiving the submitted input.
+- Screenshot OCR runs in the browser. The screenshot itself is not submitted
+  by this form, but the extracted text is submitted when the user starts a
+  check.
+- The completed result, which includes the normalized input, may remain in a
+  bounded warm-server memory cache for up to 72 hours. It is not written to
+  Vercel Blob.
+- If `GOOGLE_SHEETS_WEBHOOK_URL` is configured, the webhook receives only
+  content-free metrics: submission id/time, language, input type and length,
+  scores, final decision, and risk-signal types. Raw or sanitized input,
+  narrative fields, and quoted evidence are excluded.
+- Server-side page observation is off by default. `ENABLE_URL_OBSERVATION=true`
+  allows the server to fetch the submitted URL and redirects. Enable it only
+  behind restricted outbound networking; application hostname checks cannot
+  fully eliminate DNS-rebinding risk.
+
+Do not submit passwords, OTPs, full payment-card or identity numbers, wallet
+seed phrases, private keys, or other secrets.
 
 ## How the Experimental Agent Filter Works
 
@@ -135,17 +248,23 @@ curl -X POST https://verify1st.tw/api/agent-policy \
 
 ### IFF x402 preflight boundary
 
-The URL sandbox calls `@ifandonlyif/x402-preflight` only after receiving a
-valid x402 v2 payment requirement. VerifyFirst preserves IFF's four verdicts —
-`consistent`, `diverged`, `stale`, and `unobserved` — without turning them into
-a hidden trust score. A matching requirement is evidence of consistency, not a
-guarantee that payment is safe or that the endpoint will deliver afterward.
-The integration never holds a wallet key or executes a payment. Public checks
-need no API key; `IFF_BASE_URL` exists only for staging or local IFF instances.
+The enterprise workspace accepts a valid x402 v2 `Payment-Required` object and
+a sanitized endpoint identifier, then calls `@ifandonlyif/x402-preflight`
+through the VerifyFirst API. It preserves IFF's four verdicts — `consistent`,
+`diverged`, `stale`, and `unobserved` — without turning them into a hidden trust
+score, and displays IFF evidence separately from the enterprise's local
+network, asset, payee, and maximum-amount policy decision. Simulation mode uses
+clearly labeled synthetic verdicts and does not contact IFF.
 
-## Enterprise Verification Workspace
+A matching requirement is evidence of consistency, not a guarantee that
+payment is safe or that the endpoint will deliver afterward. Every result is
+`NOT_EXECUTED`; the integration never holds a wallet key, signs, or pays.
+Public checks need no API key; `IFF_BASE_URL` exists only for staging or local
+IFF instances.
 
-`/business/?module=verify` is the canonical product-facing workflow. It brings
+## Enterprise vLEI Verification Workspace
+
+`/business/?module=vlei` is the canonical product-facing workflow. It brings
 the strongest reusable parts of both demo pages into one interface:
 
 1. Enter an LEI to query the official GLEIF record.
@@ -163,6 +282,10 @@ the strongest reusable parts of both demo pages into one interface:
    not a signature, timestamp, issuer-authenticity proof, or append-only log.
    Only the bounded result summary and checksum enter the browser-local Trust
    Timeline.
+7. Fill in the accountable owner, target system, and use case; optionally hash
+   bounded local supporting documents and export a QVI / engineering handoff
+   JSON. Only display labels, categories, MIME types, sizes, and SHA-256
+   digests are exported—never document contents.
 
 The browser verifier does not fetch live OOBI key state, verify witness
 receipts, or run watcher-based duplicity detection. Its output is evidence for
@@ -171,7 +294,35 @@ backend verifier repeats those live checks. The strict enterprise wrapper also
 rejects trailing/unconsumed CESR bytes, unsupported framing, issuer-to-registry
 mismatches, and violations of pinned schema SAIDs plus selected fail-closed
 field, edge, operator, AID, and LEI invariants. It does not claim to be a full
-Draft-07 JSON Schema engine.
+Draft-07 JSON Schema engine. VerifyFirst is a verifier and sandbox here, not a
+QVI or vLEI issuer; fixture issuance and revocation exercises do not affect any
+real KEL, TEL, credential, or legal entity.
+
+## Enterprise x402 Preflight Workspace
+
+The x402 workspace keeps payment evidence and payment policy as two explicit
+lanes:
+
+1. Enter an endpoint identifier, then paste or choose an x402 v2
+   `Payment-Required` JSON file. The live path strips URL credentials, query,
+   and fragment before sending the endpoint identifier and requirement through
+   the VerifyFirst API to IFF; it does not fetch the merchant endpoint.
+2. Enter the enterprise's expected `network`, `asset`, `payee`, and
+   `maxAmount`. These are policy fields, not wallet credentials.
+3. Choose **Live** to request IFF evidence, or **Simulation** to replay a
+   visibly labeled synthetic verdict without contacting IFF.
+4. Review the IFF verdict and the local policy result separately. A divergence
+   identifies the mismatched condition; stale, unobserved, unavailable, or
+   malformed evidence never becomes an implicit pass.
+5. Export an Evidence JSON envelope containing the input digest, evidence,
+   policy comparison, decision, limitations, and an unsigned SHA-256
+   self-check. The result always says `NOT_EXECUTED`.
+
+This workspace is useful for integration and policy review, but it is not a
+wallet, signer, facilitator, settlement service, merchant-risk rating, or
+delivery guarantee. A production deployment must connect its own authorization,
+budget controls, signer isolation, monitoring, and execution layer after this
+preflight; those components remain outside VerifyFirst.
 
 ## Enterprise Lab Deep Dives
 
@@ -189,7 +340,9 @@ decisions:
 - **`/trust-pathways/`** — five pain-point pathways (manufacturing, payment,
   government, migrant trust, RBA), a replayable 90-second judge tour, the GLEIF
   vLEI trust-chain explainer, live GLEIF LEI lookup, GoPlus address risk, and a
-  call into the deployed keripy vLEI verifier (`services/vlei-verifier`).
+  call into the public, non-durable keripy **live demo/test backend**
+  (`services/vlei-verifier`). That Vercel service is not a production verifier
+  and is not part of a self-host production deployment.
 - **`/update-trust/`** — the vLEI *lifecycle* page. It loads the pinned
   GLEIF-IT/vlei-verifier regression fixture (GLEIF → QVI → Legal Entity → ECR),
   recomputes every Blake3 SAID, verifies Ed25519 KEL signatures with WebCrypto,
@@ -213,7 +366,7 @@ decisions:
 ### Prerequisites
 
 - Node.js 20+
-- Google Gemini API key ([get one here](https://aistudio.google.com/app/apikey))
+- A Google Gemini API key only when enabling live To C AI analysis
 
 ### Installation
 
@@ -221,14 +374,15 @@ decisions:
    ```bash
    git clone https://github.com/topben/cryptotruth.git
    cd cryptotruth
-   npm install
+   npm ci
    ```
 
 2. Configure environment:
    ```bash
    cp .env.example .env.local
    ```
-   Then edit `.env.local` and add your Gemini API key.
+   Enterprise verification and local examples run without a private key. Add a
+   Gemini key only to enable live To C AI analysis.
 
 3. Start the development server:
    ```bash
@@ -247,19 +401,26 @@ npm test
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GEMINI_API_KEY` | Yes | Your Google Gemini API key |
+| `GEMINI_API_KEY` | To C live only | Google Gemini API key; not used by the deterministic enterprise lab |
 | `GEMINI_MODEL` | No | Analysis model override (default `gemini-2.5-flash`) |
 | `GEMINI_THINKING_BUDGET` | No | Unset = model default; `0` disables thinking (cheaper/faster) |
 | `MEMORY_CACHE_MAX_ENTRIES` | No | Maximum warm-instance analysis entries (default `200`, capped at `2000`) |
 | `MEMORY_RATE_LIMIT_MAX_ENTRIES` | No | Maximum warm-instance hashed IP counters (default `5000`, capped at `20000`) |
 | `GOOGLE_SAFE_BROWSING_KEY` | No | Enables Google Safe Browsing pre-check |
 | `VIRUSTOTAL_API_KEY` | No | Enables VirusTotal pre-check |
-| `GOOGLE_SHEETS_WEBHOOK_URL` | No | Logs flat analysis summaries for human labeling |
+| `GOOGLE_SHEETS_WEBHOOK_URL` | No | Sends content-free labeling metrics; never raw/sanitized input, narrative text, or quoted evidence |
+| `ENABLE_URL_OBSERVATION` | No | Exact `true` opts into server-side fetches of submitted URLs; defaults off and requires restricted egress |
 | `BOT_API_KEY` | No | `X-Bot-Key` header value that bypasses per-IP rate limiting |
 | `COFACTS_APP_ID` | No | App id sent to the Cofacts API (default `VERIFYFIRST_AI`) |
 | `IFF_BASE_URL` | No | IFF API override for staging/local testing; production defaults to `https://ifandonlyif.io` and needs no API key |
+| `VITE_ENABLE_VERCEL_ANALYTICS` | No | Public build flag; analytics are off unless explicitly set to `true` |
 
 ## Deployment
+
+The repository is platform-portable at the application layer. Vercel is the
+reference serverless adapter in this repository, not a proprietary requirement
+of the Evidence schemas or verification services. For runtime profiles,
+required routes, and production gaps, read [Self-hosting](docs/SELF_HOSTING.md).
 
 ### Deploy to Vercel
 
@@ -289,7 +450,7 @@ cryptotruth/
 │   ├── analyze.ts            # Serverless endpoint: pre-checks → Gemini → post-processing
 │   ├── agent-policy.ts       # Deterministic Agent gate + SHA-256 evidence
 │   ├── example-responses.ts  # Canned responses for demo chips (zero quota)
-│   └── safe-domains.ts       # Self/known-safe allowlist short-circuit
+│   └── safe-domains.ts       # Exact operator-listed domain identity hint; never a safety bypass
 ├── components/
 │   ├── business/             # Integrated LEI + vLEI/CESR verification workspace
 │   ├── consumer/             # To C guided intake + safety conversation
@@ -342,7 +503,10 @@ For security vulnerabilities, please see our [Security Policy](SECURITY.md).
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+VerifyFirst's original code is licensed under the MIT License; see
+[LICENSE](LICENSE). Vendored fixtures, schema provenance and container inputs
+retain their upstream licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md)
+and [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt).
 
 ## Acknowledgments
 

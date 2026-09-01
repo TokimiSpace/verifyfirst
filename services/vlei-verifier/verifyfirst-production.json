@@ -13,12 +13,12 @@
     "https://wilbur.witness.vlei.tech/oobi"
   ],
   "durls": [
-    "https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/refs/heads/main/legal-entity-official-organizational-role-vLEI-credential.json",
-    "https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/refs/heads/main/legal-entity-engagement-context-role-vLEI-credential.json",
-    "https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/refs/heads/main/ecr-authorization-vlei-credential.json",
-    "https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/refs/heads/main/legal-entity-vLEI-credential.json",
-    "https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/refs/heads/main/oor-authorization-vlei-credential.json",
-    "https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/refs/heads/main/qualified-vLEI-issuer-vLEI-credential.json"
+    "https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/97850396f504bf8c4e19a42af3290e4b2618f50e/legal-entity-official-organizational-role-vLEI-credential.json",
+    "https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/97850396f504bf8c4e19a42af3290e4b2618f50e/legal-entity-engagement-context-role-vLEI-credential.json",
+    "https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/97850396f504bf8c4e19a42af3290e4b2618f50e/ecr-authorization-vlei-credential.json",
+    "https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/97850396f504bf8c4e19a42af3290e4b2618f50e/legal-entity-vLEI-credential.json",
+    "https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/97850396f504bf8c4e19a42af3290e4b2618f50e/oor-authorization-vlei-credential.json",
+    "https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/97850396f504bf8c4e19a42af3290e4b2618f50e/qualified-vLEI-issuer-vLEI-credential.json"
   ],
   "trustedLeis": [],
   "revocationCheck": true,
