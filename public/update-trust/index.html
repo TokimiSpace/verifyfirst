@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#091310">
   <meta name="description" content="VerifyFirst 企業信任實驗室的 Update Trust 模組：用 GLEIF 官方 keripy regression fixture 驗證 vLEI 信任鏈、SAID、KEL 簽章、ACDC 邊鏈、撤銷與到期。實驗性功能，不供正式決策。">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" sizes="any">
+  <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32">
+  <link rel="shortcut icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
   <title>Update Trust · Experimental vLEI Lifecycle | VerifyFirst</title>
   <style>
     :root{--bg:#091310;--panel:#101e19;--panel2:#142720;--line:#274036;--text:#f2f7f4;--muted:#9eb2aa;--mint:#8ee3bd;--mint2:#d9ff8b;--red:#ff786a;--amber:#ffc66b;--blue:#76b6ff;--violet:#c7a2ff;--shadow:0 26px 70px #0007}
@@ -12,7 +17,7 @@
     body{margin:0;background:radial-gradient(circle at 15% 0,#163328 0,transparent 36%),var(--bg);color:var(--text);font-family:Inter,"Noto Sans TC","PingFang TC",system-ui,sans-serif;min-height:100vh}
     a{color:var(--mint)}
     .top{height:70px;padding:0 max(20px,calc((100vw - 1200px)/2));display:flex;align-items:center;gap:20px;border-bottom:1px solid var(--line);background:#091310e8;backdrop-filter:blur(18px);position:sticky;top:0;z-index:10}
-    .brand{display:flex;gap:11px;align-items:center;color:var(--text);text-decoration:none}.mark{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:var(--mint);color:#07120e;font-weight:1000}.brand b{display:block}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:.14em}
+    .brand{display:flex;flex:none;gap:11px;align-items:center;color:var(--text);text-decoration:none}.mark{width:36px;height:36px;padding:7px;border:1px solid #36584a;border-radius:11px;display:grid;place-items:center;flex:none;background:linear-gradient(145deg,#152720,#08120e);box-shadow:inset 0 1px #ffffff12,0 7px 20px #0005}.mark img{display:block;width:100%;height:100%}.brand b{display:block}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:.14em}
     .top-note{margin:auto;color:var(--muted);font-size:12px}.top a.nav,.top button{border:1px solid var(--line);background:transparent;color:var(--muted);padding:9px 12px;border-radius:9px;font-size:12px;text-decoration:none;cursor:pointer}
     .shell{width:min(1200px,calc(100% - 32px));margin:auto;padding:54px 0 90px}
     .eyebrow{color:var(--mint);font-size:11px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;margin:0 0 12px}
@@ -73,7 +78,7 @@
 </head>
 <body>
   <header class="top">
-    <a class="brand" href="/business/"><span class="mark">V</span><span><b>VerifyFirst</b><small>B2B LAB · UPDATE TRUST</small></span></a>
+    <a class="brand" href="/business/"><span class="mark"><img src="/verifyfirst-mark.svg" alt=""></span><span><b>VerifyFirst</b><small>B2B LAB · UPDATE TRUST</small></span></a>
     <span class="top-note">EXPERIMENTAL · GLEIF 官方測試 fixture + 明確標示的模擬 · 不供正式決策</span>
     <a class="nav" href="/business/">企業實驗室</a>
     <a class="nav" href="/trust-pathways/">← Trust Pathways</a>

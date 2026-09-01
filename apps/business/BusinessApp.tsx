@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Bot,
-  Boxes,
   Building2,
   CircleDollarSign,
   ExternalLink,
@@ -19,6 +18,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import AgentSandbox from '../../components/AgentSandbox';
+import BrandMark from '../../components/BrandMark';
 import CredentialIncidentResponse from '../../components/CredentialIncidentResponse';
 import SandboxControl from '../../components/SandboxControl';
 import TrustVerificationPanel, { type VerificationSection } from '../../components/business/TrustVerificationPanel';
@@ -231,7 +231,7 @@ const BusinessApp: React.FC = () => {
       <header className="vf-header">
         <div className="vf-container vf-header-inner">
           <a className="vf-brand" href="/business/">
-            <span className="vf-brand-mark"><Boxes size={18} /></span>
+            <span className="vf-brand-mark"><BrandMark className="vf-brand-symbol" /></span>
             <span className="vf-brand-copy"><span className="vf-brand-name">VerifyFirst <b>Lab</b></span><span className="vf-brand-subtitle">{t.subtitle}</span></span>
           </a>
           <nav className="vf-product-nav" aria-label={t.navLabel}>

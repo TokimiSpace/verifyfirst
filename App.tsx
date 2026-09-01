@@ -23,7 +23,8 @@ import CofactsFindings from './components/CofactsFindings';
 import ReportModal from './components/ReportModal';
 import SituationIntake, { ConsumerSituation } from './components/consumer/SituationIntake';
 import SafetyAssistant from './components/consumer/SafetyAssistant';
-import { ShieldAlert, Search, Globe, CheckCircle2, AlertTriangle, Sparkles, ExternalLink, Accessibility, ChevronDown, ThumbsUp, ThumbsDown, RotateCcw, ArrowLeft, ShieldCheck, HeartHandshake, Building2 } from 'lucide-react';
+import { ShieldAlert, Search, Globe, CheckCircle2, AlertTriangle, Sparkles, ExternalLink, Accessibility, ChevronDown, ThumbsUp, ThumbsDown, RotateCcw, ArrowLeft, ShieldCheck, Building2 } from 'lucide-react';
+import BrandMark from './components/BrandMark';
 
 // UI Text dictionary for all static text
 const UI_TEXT = {
@@ -498,7 +499,7 @@ const App: React.FC = () => {
         <div className={`vf-container vf-header-inner ${isSeniorMode ? 'min-h-[76px]' : ''}`}>
           <a href="/" className="vf-brand" onClick={(event) => { event.preventDefault(); handleReset(); }}>
             <span className="vf-brand-mark">
-              <HeartHandshake className={isSeniorMode ? 'w-6 h-6' : 'w-[18px] h-[18px]'} />
+              <BrandMark className={isSeniorMode ? 'w-6 h-6' : 'w-[21px] h-[21px]'} />
             </span>
             <span className="vf-brand-copy">
               <span className={`vf-brand-name ${isSeniorMode ? 'text-xl' : ''}`}>{t.appName}</span>
