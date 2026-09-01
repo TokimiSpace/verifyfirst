@@ -10,14 +10,20 @@ import {
   Fingerprint,
   KeyRound,
   LockKeyhole,
+  Plus,
   RefreshCcw,
   RotateCcw,
   ScanSearch,
+  Server,
   ShieldCheck,
+  Trash2,
   UserRound,
 } from 'lucide-react';
 import {
+  CredentialEnvironmentInventory,
+  CredentialIncidentAnalysis,
   CredentialIncidentWorkspace,
+  CredentialInventoryMatch,
   CredentialResponseAction,
   Language,
   TrustTimelineEvent,
@@ -35,16 +41,37 @@ interface CredentialIncidentResponseProps {
   onBack: () => void;
 }
 
-const STORAGE_KEY = 'verifyfirst.credential-incident.v1';
+const STORAGE_KEY = 'verifyfirst.credential-incident.v2';
+const LEGACY_STORAGE_KEY = 'verifyfirst.credential-incident.v1';
 
-const DEFAULT_INVENTORY = [
-  'GEMINI_API_KEY',
-  'GOGOLOOK_API_KEY',
-  'GOOGLE_SAFE_BROWSING_KEY',
-  'VIRUSTOTAL_API_KEY',
-  'GOOGLE_SHEETS_WEBHOOK_URL',
-  'BOT_API_KEY',
-].join('\n');
+interface CredentialEnvironmentDraft {
+  id: string;
+  label: string;
+  system: string;
+  input: string;
+}
+
+interface LegacyCredentialWorkspace {
+  version: 1;
+  analysis: CredentialIncidentAnalysis;
+  inventoryNames: string[];
+  matches: Array<Omit<CredentialInventoryMatch, 'environments'>>;
+  actions: Array<Omit<CredentialResponseAction, 'affectedEnvironments'>>;
+  timeline: TrustTimelineEvent[];
+}
+
+const createEnvironmentDraft = (): CredentialEnvironmentDraft => ({
+  id: `env_${Date.now().toString(36)}_${crypto.randomUUID().slice(0, 8)}`,
+  label: '',
+  system: '',
+  input: '',
+});
+
+const draftsFromInventory = (environments: CredentialEnvironmentInventory[]): CredentialEnvironmentDraft[] => (
+  environments.length
+    ? environments.map(environment => ({ ...environment, input: environment.credentialNames.join('\n') }))
+    : [createEnvironmentDraft()]
+);
 
 const DEMO_NOTICE = `Zeabur security incident update — 2026-08-27
 An unauthorized party used an internal service credential to retrieve project environment variable records. Customers should revoke and replace affected credentials and review unusual usage and charges.
@@ -69,11 +96,12 @@ const COPY = {
     noticePlaceholder: '貼上公告文字；系統會在本機整理受影響服務與環境變數名稱…', demo: '載入 Zeabur 事件範例', analyze: '解析公告',
     missingNotice: '請先貼入包含事件資訊的公告內容。', noNames: '沒有辨識到憑證名稱。請貼入包含環境變數名稱的公告文字。',
     summary: '事件摘要', detected: '辨識到', services: '個相關服務', names: '個憑證名稱', sourceLink: '查看原始來源', newIncident: '開新事件',
-    inventoryTitle: '只比對名稱', inventoryBody: '列出平台使用的環境變數名稱，一行一個。可直接貼 KEY=value；值不會被保存或傳送。',
-    inventory: '平台憑證清單', owner: '預設負責人', ownerPlaceholder: '例如：Ben / Security', compare: '比對並建立處置清單',
+    inventoryTitle: '建立企業環境矩陣', inventoryBody: '依正式、測試、預覽等環境輸入自己的部署欄位。只保留名稱；KEY=value 的值會立即丟棄。',
+    environment: '環境名稱', environmentPlaceholder: '例如：正式環境', system: '系統／部署平台', systemPlaceholder: '例如：Vercel · API service', inventory: '環境變數名稱', inventoryPlaceholder: '每行一個，例如：\nDATABASE_URL\nOPENAI_API_KEY', addEnvironment: '新增環境', removeEnvironment: '移除環境',
+    owner: '預設負責人', ownerPlaceholder: '例如：Ben / Security', compare: '比對並建立處置清單', missingInventory: '請至少新增一個環境，並填入環境名稱與環境變數名稱。', incompleteEnvironment: '每個已使用的環境都需要環境名稱與至少一個環境變數名稱。',
     noMatch: '目前沒有直接命中', noMatchBody: '仍要確認 Zeabur、舊部署、Preview 與隊友環境是否使用相同憑證。',
     matchTitle: '直接命中', actionTitle: '處置清單', actionBody: '每項任務都要有負責人；標記完成時會記錄時間與證據雜湊。',
-    taskOwner: '負責人', markDone: '標記完成', reopen: '重新開啟', completed: '已完成', pending: '待處理', affects: '影響',
+    taskOwner: '負責人', markDone: '標記完成', reopen: '重新開啟', completed: '已完成', pending: '待處理', affects: '影響欄位', affectedEnvironments: '受影響環境',
     timeline: 'Trust Timeline', timelineBody: '只記錄名稱、負責人、動作、時間與 SHA-256；不含秘密值。', events: 'EVENTS',
     copy: '複製應變摘要', copied: '已複製', ownerRequired: '請先填寫這項任務的負責人。', clearConfirm: '確定清除目前事件與本機時間線？',
   },
@@ -87,11 +115,12 @@ const COPY = {
     noticePlaceholder: 'Paste the notice; affected services and environment-variable names are extracted locally…', demo: 'Load Zeabur example', analyze: 'Parse notice',
     missingNotice: 'Paste an incident notice first.', noNames: 'No credential names were detected. Include the environment-variable names from the notice.',
     summary: 'Incident summary', detected: 'Detected', services: 'related services', names: 'credential names', sourceLink: 'Open original source', newIncident: 'New incident',
-    inventoryTitle: 'Compare names only', inventoryBody: 'List environment-variable names used by your platform, one per line. KEY=value is accepted; values are discarded.',
-    inventory: 'Platform credential inventory', owner: 'Default owner', ownerPlaceholder: 'e.g. Ben / Security', compare: 'Compare and build action plan',
+    inventoryTitle: 'Build your environment matrix', inventoryBody: 'Enter your own production, staging, and preview fields by environment. Only names survive; KEY=value values are discarded immediately.',
+    environment: 'Environment name', environmentPlaceholder: 'e.g. Production', system: 'System / deployment', systemPlaceholder: 'e.g. Vercel · API service', inventory: 'Environment-variable names', inventoryPlaceholder: 'One per line, e.g.\nDATABASE_URL\nOPENAI_API_KEY', addEnvironment: 'Add environment', removeEnvironment: 'Remove environment',
+    owner: 'Default owner', ownerPlaceholder: 'e.g. Ben / Security', compare: 'Compare and build action plan', missingInventory: 'Add at least one environment with a name and environment-variable names.', incompleteEnvironment: 'Every environment in use needs a name and at least one environment-variable name.',
     noMatch: 'No direct match', noMatchBody: 'Still check old deployments, previews, teammates, and any Zeabur project for reused credentials.',
     matchTitle: 'Direct matches', actionTitle: 'Response actions', actionBody: 'Every action needs an owner. Completion records the time and an evidence hash.',
-    taskOwner: 'Owner', markDone: 'Mark complete', reopen: 'Reopen', completed: 'Completed', pending: 'Pending', affects: 'Affects',
+    taskOwner: 'Owner', markDone: 'Mark complete', reopen: 'Reopen', completed: 'Completed', pending: 'Pending', affects: 'Affected fields', affectedEnvironments: 'Affected environments',
     timeline: 'Trust Timeline', timelineBody: 'Names, owner, action, time, and SHA-256 only—never secret values.', events: 'EVENTS',
     copy: 'Copy response summary', copied: 'Copied', ownerRequired: 'Add an owner before completing this action.', clearConfirm: 'Clear this incident and its local timeline?',
   },
@@ -105,11 +134,12 @@ const COPY = {
     noticePlaceholder: 'Dán thông báo; dịch vụ và tên biến môi trường sẽ được xử lý cục bộ…', demo: 'Tải ví dụ Zeabur', analyze: 'Phân tích thông báo',
     missingNotice: 'Hãy dán thông báo sự cố trước.', noNames: 'Không tìm thấy tên thông tin xác thực. Hãy thêm tên biến môi trường.',
     summary: 'Tóm tắt sự cố', detected: 'Đã phát hiện', services: 'dịch vụ liên quan', names: 'tên thông tin xác thực', sourceLink: 'Mở nguồn gốc', newIncident: 'Sự cố mới',
-    inventoryTitle: 'Chỉ so khớp tên', inventoryBody: 'Liệt kê tên biến môi trường, mỗi dòng một tên. Có thể dán KEY=value; giá trị sẽ bị loại bỏ.',
-    inventory: 'Danh mục thông tin xác thực', owner: 'Người phụ trách mặc định', ownerPlaceholder: 'VD: Ben / Security', compare: 'So khớp và tạo kế hoạch',
+    inventoryTitle: 'Tạo ma trận môi trường', inventoryBody: 'Nhập các trường production, staging và preview của doanh nghiệp theo từng môi trường. Chỉ giữ tên; giá trị KEY=value bị loại bỏ ngay.',
+    environment: 'Tên môi trường', environmentPlaceholder: 'VD: Production', system: 'Hệ thống / nền tảng', systemPlaceholder: 'VD: Vercel · API service', inventory: 'Tên biến môi trường', inventoryPlaceholder: 'Mỗi dòng một tên, VD:\nDATABASE_URL\nOPENAI_API_KEY', addEnvironment: 'Thêm môi trường', removeEnvironment: 'Xóa môi trường',
+    owner: 'Người phụ trách mặc định', ownerPlaceholder: 'VD: Ben / Security', compare: 'So khớp và tạo kế hoạch', missingInventory: 'Thêm ít nhất một môi trường có tên và tên biến môi trường.', incompleteEnvironment: 'Mỗi môi trường đang dùng cần tên và ít nhất một tên biến môi trường.',
     noMatch: 'Không khớp trực tiếp', noMatchBody: 'Vẫn cần kiểm tra bản triển khai cũ, preview, đồng đội và dự án Zeabur.',
     matchTitle: 'Khớp trực tiếp', actionTitle: 'Danh sách ứng phó', actionBody: 'Mỗi việc cần người phụ trách; khi hoàn tất sẽ ghi thời gian và mã bằng chứng.',
-    taskOwner: 'Người phụ trách', markDone: 'Đánh dấu xong', reopen: 'Mở lại', completed: 'Đã xong', pending: 'Chờ xử lý', affects: 'Ảnh hưởng',
+    taskOwner: 'Người phụ trách', markDone: 'Đánh dấu xong', reopen: 'Mở lại', completed: 'Đã xong', pending: 'Chờ xử lý', affects: 'Trường bị ảnh hưởng', affectedEnvironments: 'Môi trường bị ảnh hưởng',
     timeline: 'Trust Timeline', timelineBody: 'Chỉ lưu tên, người phụ trách, hành động, thời gian và SHA-256—không lưu giá trị bí mật.', events: 'SỰ KIỆN',
     copy: 'Sao chép tóm tắt', copied: 'Đã sao chép', ownerRequired: 'Thêm người phụ trách trước khi hoàn tất.', clearConfirm: 'Xóa sự cố và dòng thời gian cục bộ?',
   },
@@ -139,7 +169,22 @@ const ACTION_UI = {
 const loadWorkspace = (): CredentialIncidentWorkspace | null => {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as CredentialIncidentWorkspace | null;
-    return parsed?.version === 1 && parsed.analysis?.id ? parsed : null;
+    if (parsed?.version === 2 && parsed.analysis?.id && Array.isArray(parsed.environments)) return parsed;
+
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) ?? 'null') as LegacyCredentialWorkspace | null;
+    if (legacy?.version !== 1 || !legacy.analysis?.id) return null;
+    const environments: CredentialEnvironmentInventory[] = legacy.inventoryNames.length ? [{
+      id: 'env_migrated', label: 'Existing inventory', system: '', credentialNames: legacy.inventoryNames,
+    }] : [];
+    return {
+      version: 2,
+      analysis: legacy.analysis,
+      inventoryNames: legacy.inventoryNames,
+      environments,
+      matches: legacy.matches.map(match => ({ ...match, environments: environments.filter(environment => environment.credentialNames.includes(match.name)).map(({ id, label, system }) => ({ id, label, system })) })),
+      actions: legacy.actions.map(action => ({ ...action, affectedEnvironments: environments.map(environment => environment.label) })),
+      timeline: legacy.timeline,
+    };
   } catch {
     return null;
   }
@@ -158,16 +203,20 @@ const timeLabel = (iso: string, language: Language) => new Intl.DateTimeFormat(l
 
 const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({ language, onBack }) => {
   const t = COPY[language] ?? COPY['zh-TW'];
-  const [workspace, setWorkspace] = useState<CredentialIncidentWorkspace | null>(() => loadWorkspace());
+  const [initialWorkspace] = useState<CredentialIncidentWorkspace | null>(() => loadWorkspace());
+  const [workspace, setWorkspace] = useState<CredentialIncidentWorkspace | null>(initialWorkspace);
   const [notice, setNotice] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
-  const [inventoryInput, setInventoryInput] = useState(() => loadWorkspace()?.inventoryNames.join('\n') || DEFAULT_INVENTORY);
-  const [defaultOwner, setDefaultOwner] = useState(() => loadWorkspace()?.actions.find(action => action.owner)?.owner || '');
+  const [environmentDrafts, setEnvironmentDrafts] = useState<CredentialEnvironmentDraft[]>(() => draftsFromInventory(initialWorkspace?.environments ?? []));
+  const [defaultOwner, setDefaultOwner] = useState(() => initialWorkspace?.actions.find(action => action.owner)?.owner || '');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (workspace) localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
+    if (workspace) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+    }
     else localStorage.removeItem(STORAGE_KEY);
   }, [workspace]);
 
@@ -205,7 +254,7 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
       target: analysis.sourceUrl || 'pasted notice', decision: 'INFO',
       detail: `${analysis.services.length} services / ${analysis.exposedNames.length} credential names; values excluded`,
     });
-    setWorkspace({ version: 1, analysis, inventoryNames: [], matches: [], actions: [], timeline: [timelineEvent] });
+    setWorkspace({ version: 2, analysis, inventoryNames: [], environments: [], matches: [], actions: [], timeline: [timelineEvent] });
     setNotice('');
     setSourceUrl('');
   };
@@ -213,18 +262,41 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
   const handleCompare = async () => {
     if (!workspace) return;
     setError('');
-    const inventoryNames = normalizeInventoryNames(inventoryInput);
-    const matches = matchCredentialInventory(workspace.analysis, inventoryNames);
+    const activeDrafts = environmentDrafts.filter(draft => draft.label.trim() || draft.system.trim() || draft.input.trim());
+    if (!activeDrafts.length) {
+      setError(t.missingInventory);
+      return;
+    }
+    const environments = activeDrafts.map(draft => ({
+      id: draft.id,
+      label: draft.label.trim(),
+      system: draft.system.trim(),
+      credentialNames: normalizeInventoryNames(draft.input),
+    }));
+    if (environments.some(environment => !environment.label || !environment.credentialNames.length)) {
+      setError(t.incompleteEnvironment);
+      return;
+    }
+    const inventoryNames = [...new Set(environments.flatMap(environment => environment.credentialNames))].sort();
+    const matches = matchCredentialInventory(workspace.analysis, environments);
     const actions = buildCredentialResponseActions(matches, defaultOwner.trim());
     const timelineEvent = await makeTimelineEvent({
       at: new Date().toISOString(), actor: 'VerifyFirst name matcher', action: 'INVENTORY_MATCHED',
-      target: `${inventoryNames.length} credential names`, decision: matches.length ? 'REQUIRE_CONFIRMATION' : 'INFO',
-      detail: `${matches.length} direct matches; secret values discarded before comparison`,
+      target: `${environments.length} environments / ${inventoryNames.length} credential names`, decision: matches.length ? 'REQUIRE_CONFIRMATION' : 'INFO',
+      detail: `${matches.length} direct matches across ${new Set(matches.flatMap(match => match.environments.map(environment => environment.id))).size} environments; secret values discarded before comparison`,
     });
-    setInventoryInput(inventoryNames.join('\n'));
+    setEnvironmentDrafts(draftsFromInventory(environments));
     setWorkspace(current => current ? {
-      ...current, inventoryNames, matches, actions, timeline: [timelineEvent, ...current.timeline].slice(0, 60),
+      ...current, inventoryNames, environments, matches, actions, timeline: [timelineEvent, ...current.timeline].slice(0, 60),
     } : current);
+  };
+
+  const updateEnvironment = (id: string, field: 'label' | 'system' | 'input', value: string) => {
+    setEnvironmentDrafts(current => current.map(environment => environment.id === id ? { ...environment, [field]: value } : environment));
+  };
+
+  const removeEnvironment = (id: string) => {
+    setEnvironmentDrafts(current => current.length === 1 ? [createEnvironmentDraft()] : current.filter(environment => environment.id !== id));
   };
 
   const updateActionOwner = (actionId: string, owner: string) => {
@@ -248,6 +320,7 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
       actionId: action.id,
       phase: action.phase,
       affectedNames: action.affectedNames,
+      affectedEnvironments: action.affectedEnvironments,
       owner: action.owner.trim(),
       status: completing ? 'COMPLETED' : 'REOPENED',
       at: now,
@@ -259,7 +332,9 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
       at: now,
       actor: action.owner.trim(),
       action: completing ? `${action.phase}_COMPLETED` : `${action.phase}_REOPENED`,
-      target: action.affectedNames.join(', ') || 'credential inventory',
+      target: action.affectedEnvironments.length
+        ? `${action.affectedEnvironments.join(', ')} / ${action.affectedNames.join(', ')}`
+        : action.affectedNames.join(', ') || 'credential inventory',
       decision: completing ? 'ALLOW' : 'REQUIRE_CONFIRMATION',
       detail: localizedAction.title,
       evidenceId,
@@ -281,7 +356,7 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
     setWorkspace(null);
     setNotice('');
     setSourceUrl('');
-    setInventoryInput(DEFAULT_INVENTORY);
+    setEnvironmentDrafts([createEnvironmentDraft()]);
     setDefaultOwner('');
     setError('');
   };
@@ -294,8 +369,9 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
       `Source: ${workspace.analysis.sourceUrl || 'N/A'}`,
       `Exposed names: ${workspace.analysis.exposedNames.join(', ')}`,
       `Direct matches: ${workspace.matches.map(match => match.name).join(', ') || 'none'}`,
+      ...workspace.environments.map(environment => `Environment: ${environment.label}${environment.system ? ` (${environment.system})` : ''} — ${environment.credentialNames.join(', ')}`),
       '',
-      ...workspace.actions.map(action => `[${action.status}] ${action.phase} — ${actionCopy(action).title} — ${action.owner || 'unassigned'}${action.evidenceId ? ` — ${action.evidenceId}` : ''}`),
+      ...workspace.actions.map(action => `[${action.status}] ${action.phase} — ${actionCopy(action).title} — ${action.affectedEnvironments.join(', ') || 'all inventory'} — ${action.owner || 'unassigned'}${action.evidenceId ? ` — ${action.evidenceId}` : ''}`),
     ];
     await navigator.clipboard.writeText(lines.join('\n'));
     setCopied(true);
@@ -375,10 +451,19 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
                 <span><KeyRound size={18} /></span>
                 <div><small>STEP 02–03 / NAME-ONLY</small><h2>{t.inventoryTitle}</h2><p>{t.inventoryBody}</p></div>
               </div>
-              <label>
-                <span>{t.inventory}</span>
-                <textarea value={inventoryInput} onChange={event => setInventoryInput(event.target.value)} rows={9} spellCheck={false} />
-              </label>
+              <div className="vf-environment-matrix">
+                {environmentDrafts.map((environment, index) => (
+                  <article key={environment.id} className="vf-environment-row">
+                    <header><span><Server size={13} />ENV {String(index + 1).padStart(2, '0')}</span><button type="button" onClick={() => removeEnvironment(environment.id)} aria-label={`${t.removeEnvironment} ${index + 1}`} title={t.removeEnvironment}><Trash2 size={13} /></button></header>
+                    <div className="vf-environment-meta">
+                      <label><span>{t.environment}</span><input value={environment.label} onChange={event => updateEnvironment(environment.id, 'label', event.target.value)} placeholder={t.environmentPlaceholder} /></label>
+                      <label><span>{t.system}</span><input value={environment.system} onChange={event => updateEnvironment(environment.id, 'system', event.target.value)} placeholder={t.systemPlaceholder} /></label>
+                    </div>
+                    <label><span>{t.inventory}</span><textarea value={environment.input} onChange={event => updateEnvironment(environment.id, 'input', event.target.value)} placeholder={t.inventoryPlaceholder} rows={5} spellCheck={false} /></label>
+                  </article>
+                ))}
+                <button type="button" className="vf-add-environment" onClick={() => setEnvironmentDrafts(current => [...current, createEnvironmentDraft()])}><Plus size={14} />{t.addEnvironment}</button>
+              </div>
               <label>
                 <span>{t.owner}</span>
                 <input value={defaultOwner} onChange={event => setDefaultOwner(event.target.value)} placeholder={t.ownerPlaceholder} />
@@ -391,7 +476,7 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
               <div className="vf-ledger-list">
                 {workspace.analysis.exposedNames.map(name => {
                   const match = workspace.matches.find(item => item.name === name);
-                  return <div key={name} className={match ? 'is-match' : ''}><code>{name}</code>{match ? <strong>{t.matchTitle}</strong> : <span>NOTICE</span>}</div>;
+                  return <div key={name} className={match ? 'is-match' : ''}><code>{name}</code>{match ? <strong title={match.environments.map(environment => environment.label).join(', ')}>{match.environments.map(environment => environment.label).join(' · ')}</strong> : <span>NOTICE</span>}</div>;
                 })}
               </div>
             </aside>
@@ -414,7 +499,7 @@ const CredentialIncidentResponse: React.FC<CredentialIncidentResponseProps> = ({
                     <div className="vf-action-copy">
                       <div><span>{PHASE_LABEL[action.phase]}</span><strong>{actionCopy(action).title}</strong></div>
                       <p>{actionCopy(action).detail}</p>
-                      {action.affectedNames.length > 0 && <small>{t.affects}: {action.affectedNames.join(' · ')}</small>}
+                      {action.affectedNames.length > 0 && <small>{t.affectedEnvironments}: {action.affectedEnvironments.join(' · ')} · {t.affects}: {action.affectedNames.join(' · ')}</small>}
                     </div>
                     <label className="vf-action-owner"><span><UserRound size={12} />{t.taskOwner}</span><input value={action.owner} onChange={event => updateActionOwner(action.id, event.target.value)} placeholder="—" /></label>
                     <button className="vf-action-toggle" onClick={() => toggleAction(action)}>

@@ -1,9 +1,17 @@
 # IFF-compatible x402 evidence service
 
-VerifyFirst uses `@ifandonlyif/x402-preflight@0.1.0` to compare a caller-supplied
+VerifyFirst uses `@ifandonlyif/x402-preflight@0.2.0` to compare a caller-supplied
 x402 v2 payment requirement with an independent observation. The package is
 MIT-licensed and locked by version, registry URL, and integrity digest in
 `package-lock.json`.
+
+Version 0.2.0 also provides the canonical amount-blind payee fingerprint.
+VerifyFirst computes both canonical requirement and payee fingerprints locally,
+then requires the evidence service's `received` fingerprint to match the local
+SDK result. A mismatch fails closed as
+`UNAVAILABLE / IFF_RECEIVED_FINGERPRINT_MISMATCH`. The payee fingerprint helps
+separate an amount-only change from a change of recipient without implying that
+either recipient is trustworthy.
 
 The default evidence service is `https://ifandonlyif.io`. A self-hoster may set
 `IFF_BASE_URL` to a compatible service. An override changes the Evidence source
@@ -94,6 +102,8 @@ ownership fields `method`, `verified_at`, and `last_verified_at`.
   or streamed body becomes `UNAVAILABLE / IFF_RESPONSE_TOO_LARGE`.
 - Malformed JSON, unknown verdicts, or invalid required shapes become
   `UNAVAILABLE / IFF_INVALID_RESPONSE`.
+- A `received` fingerprint that differs from the local v0.2 canonical result
+  becomes `UNAVAILABLE / IFF_RECEIVED_FINGERPRINT_MISMATCH`.
 - HTTP errors, timeouts, and incompatible services remain explicit unavailable
   states. They never become `READY_FOR_HUMAN_APPROVAL`.
 - The custom service currently receives no API key or custom authorization

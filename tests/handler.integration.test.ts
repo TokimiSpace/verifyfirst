@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { computeFingerprint, type PaymentOption } from '@ifandonlyif/x402-preflight';
 
 // Mock @google/genai BEFORE importing the handler, so the handler picks up the mock.
 const mockGenerateContent = vi.fn();
@@ -520,6 +521,7 @@ describe('POST /api/analyze — input hardening', () => {
         payTo: '0x1111111111111111111111111111111111111111',
       }],
     };
+    const canonical = (await computeFingerprint(paymentRequired.accepts as PaymentOption[]))!;
     const encoded = Buffer.from(JSON.stringify(paymentRequired), 'utf8').toString('base64');
 
     mockGenerateContent.mockResolvedValueOnce({
@@ -529,7 +531,7 @@ describe('POST /api/analyze — input hardening', () => {
     mockIffVerify.mockResolvedValueOnce({
       url: 'https://merchant.example/pay',
       verdict: 'consistent',
-      received: { set_fingerprint: 'received', option_fingerprints: ['option'] },
+      received: { set_fingerprint: canonical.setFingerprint, option_fingerprints: canonical.optionFingerprints },
       observed: {
         set_fingerprint: 'observed', option_fingerprints: ['option'], observation_id: 'observation',
         observed_at: '2026-08-29T06:00:00.000Z', probe_type: 'scheduled', monitor_id: 'iff-monitor',

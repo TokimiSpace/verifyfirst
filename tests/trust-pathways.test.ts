@@ -209,7 +209,7 @@ describe('Trust Pathways standalone demo', () => {
   it('uses the pinned IFF SDK through the same-origin preflight API', () => {
     expect(page).toContain('IFF SDK PREFLIGHT · x402 v2');
     expect(page).toContain('https://ifandonlyif.io/sdk');
-    expect(page).toContain("version:'0.1.0'");
+    expect(page).toContain("version:'0.2.0'");
     expect(page).toContain("verifyFirstApi:'/api/x402-preflight'");
     expect(page).toContain('await fetch(IFF_SDK.verifyFirstApi');
     expect(page).toContain("policy:payload.policy?.decision||'HOLD_IFF_UNAVAILABLE'");
@@ -251,7 +251,7 @@ describe('Trust Pathways standalone demo', () => {
       observed: { report_hash: 'observed-report-hash' },
       inclusion: { tree_size: 42, log_index: 7, sth: { root_hash: 'root-hash' } },
       checked_at: '2026-09-01T10:00:00.000Z',
-    }, 'IFF_PUBLIC_API · @ifandonlyif/x402-preflight@0.1.0');
+    }, 'IFF_PUBLIC_API · @ifandonlyif/x402-preflight@0.2.0');
     const afterSceneSwitch = render(first, first.source);
 
     expect(afterSceneSwitch).toMatchObject({

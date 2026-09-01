@@ -106,14 +106,15 @@ package; VerifyFirst does not relicense third-party code.
 | `react`, `react-dom` | 19.2.0 | MIT |
 | `lucide-react` | 0.555.0 | ISC |
 | `@google/genai` | 1.30.0 | Apache-2.0 |
-| `@ifandonlyif/x402-preflight` | 0.1.0 | MIT |
+| `@ifandonlyif/x402-preflight` | 0.2.0 | MIT |
 | `@vercel/analytics` | 1.6.1 | MPL-2.0 |
 | `tesseract.js` | 7.0.0 | Apache-2.0 |
 | `tailwindcss` | 3.4.17 | MIT |
 | `postcss` | 8.5.26 | MIT |
 | `autoprefixer` | 10.4.21 | MIT |
 
-The IFF package wraps the public IFF service; its inclusion does not imply that
-IFF endorses VerifyFirst. Vercel Analytics is compiled into the project only as
+The IFF package wraps the public IFF service and provides its canonical v0.2
+fingerprint implementation; its inclusion does not imply that IFF endorses
+VerifyFirst. Vercel Analytics is compiled into the project only as
 an optional component and remains disabled unless an operator explicitly sets
 the public build flag documented in `.env.example`.

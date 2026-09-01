@@ -1,8 +1,12 @@
 import {
+  computeFingerprint,
+  computePayeeFingerprint,
   DEFAULT_BASE_URL,
   decodePaymentRequiredHeader,
+  FINGERPRINT_VERSION,
   verify,
   VerifyRequestError,
+  type PaymentOption,
   type PaymentRequiredEnvelope,
   type VerifyOptions,
   type VerifyResult,
@@ -55,6 +59,34 @@ const isRecord = (value: unknown): value is Record<string, unknown> => (
 
 const isBoundedString = (value: unknown, maxLength = 4_096): value is string => (
   typeof value === 'string' && value.length > 0 && value.length <= maxLength
+);
+
+const asPaymentOptions = (accepts: unknown[]): PaymentOption[] | null => {
+  if (!accepts.length || accepts.length > MAX_IFF_ARRAY_ITEMS) return null;
+  const options: PaymentOption[] = [];
+  for (const candidate of accepts) {
+    const maxTimeoutSeconds = isRecord(candidate) ? candidate.maxTimeoutSeconds : undefined;
+    if (!isRecord(candidate)
+      || !isBoundedString(candidate.scheme, 128)
+      || !isBoundedString(candidate.network, 256)
+      || !isBoundedString(candidate.asset, 512)
+      || !isBoundedString(candidate.amount, 256)
+      || !isBoundedString(candidate.payTo, 512)
+      || (maxTimeoutSeconds !== undefined && !isNonNegativeInteger(maxTimeoutSeconds))) return null;
+    options.push({
+      scheme: candidate.scheme,
+      network: candidate.network,
+      asset: candidate.asset,
+      amount: candidate.amount,
+      payTo: candidate.payTo,
+      ...(typeof maxTimeoutSeconds === 'number' ? { maxTimeoutSeconds } : {}),
+    });
+  }
+  return options;
+};
+
+const sameStrings = (left: string[], right: string[]) => (
+  left.length === right.length && left.every((value, index) => value === right[index])
 );
 
 const isStringArray = (value: unknown): value is string[] => (
@@ -313,6 +345,18 @@ export const verifyX402Requirement = async (
     };
   }
 
+  const paymentOptions = asPaymentOptions(paymentRequired.accepts);
+  if (!paymentOptions) {
+    return {
+      provider: 'ifandonlyif.io',
+      evidenceBaseUrl: evidenceEndpoint.baseUrl,
+      evidenceSource: 'UNAVAILABLE',
+      status: 'INVALID_REQUIREMENT',
+      inclusionAvailable: false,
+      errorCode: 'INVALID_X402_REQUIREMENT',
+    };
+  }
+
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   if (!fetchImpl) return unavailable('IFF_FETCH_UNAVAILABLE', evidenceEndpoint.baseUrl);
 
@@ -326,12 +370,25 @@ export const verifyX402Requirement = async (
     endpointUrl.search = '';
     endpointUrl.hash = '';
 
+    const [localFingerprint, localPayeeFingerprint] = await Promise.all([
+      computeFingerprint(paymentOptions),
+      computePayeeFingerprint(paymentOptions),
+    ]);
+    if (!localFingerprint || !localPayeeFingerprint) {
+      return unavailable('IFF_LOCAL_FINGERPRINT_FAILED', evidenceEndpoint.baseUrl);
+    }
+
     const rawResult: unknown = await (options.verifyFn ?? verify)(endpointUrl.toString(), paymentRequired, {
       baseUrl: evidenceEndpoint.baseUrl,
       fetch: timeoutFetch(fetchImpl, options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     });
     if (!isVerifyResult(rawResult)) return unavailable('IFF_INVALID_RESPONSE', evidenceEndpoint.baseUrl);
     const result = rawResult;
+    const receivedFingerprintMatchesLocal = result.received.set_fingerprint === localFingerprint.setFingerprint
+      && sameStrings(result.received.option_fingerprints, localFingerprint.optionFingerprints);
+    if (!receivedFingerprintMatchesLocal) {
+      return unavailable('IFF_RECEIVED_FINGERPRINT_MISMATCH', evidenceEndpoint.baseUrl);
+    }
 
     return {
       provider: 'ifandonlyif.io',
@@ -353,6 +410,12 @@ export const verifyX402Requirement = async (
       reportHash: result.observed?.report_hash,
       receivedFingerprint: result.received?.set_fingerprint,
       receivedOptionFingerprints: result.received?.option_fingerprints,
+      fingerprintVersion: FINGERPRINT_VERSION,
+      localReceivedFingerprint: localFingerprint.setFingerprint,
+      localReceivedOptionFingerprints: localFingerprint.optionFingerprints,
+      localPayeeFingerprint: localPayeeFingerprint.payeeSetFingerprint,
+      localPayeeOptionFingerprints: localPayeeFingerprint.payeeFingerprints,
+      receivedFingerprintMatchesLocal,
       observedFingerprint: result.observed?.set_fingerprint,
       observedOptionFingerprints: result.observed?.option_fingerprints,
       unmatchedReceivedOptions: result.unmatched_received_options,

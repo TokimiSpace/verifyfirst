@@ -88,7 +88,7 @@
       "required": ["policyVersion", "iffSdk"],
       "properties": {
         "policyVersion": { "const": "verifyfirst.x402-enterprise-policy.v1" },
-        "iffSdk": { "const": "@ifandonlyif/x402-preflight@0.1.0" }
+        "iffSdk": { "const": "@ifandonlyif/x402-preflight@0.2.0" }
       }
     },
     "source": {
@@ -125,6 +125,12 @@
         "reportHash": { "type": "string" },
         "receivedFingerprint": { "type": "string" },
         "receivedOptionFingerprints": { "type": "array", "items": { "type": "string" } },
+        "fingerprintVersion": { "type": "integer", "minimum": 1 },
+        "localReceivedFingerprint": { "type": "string" },
+        "localReceivedOptionFingerprints": { "type": "array", "items": { "type": "string" } },
+        "localPayeeFingerprint": { "type": "string" },
+        "localPayeeOptionFingerprints": { "type": "array", "items": { "type": "string" } },
+        "receivedFingerprintMatchesLocal": { "type": "boolean" },
         "observedFingerprint": { "type": "string" },
         "observedOptionFingerprints": { "type": "array", "items": { "type": "string" } },
         "unmatchedReceivedOptions": { "type": "array", "items": { "type": "string" } },

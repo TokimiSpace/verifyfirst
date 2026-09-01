@@ -1,5 +1,6 @@
 import {
   CredentialIncidentAnalysis,
+  CredentialEnvironmentInventory,
   CredentialIncidentSeverity,
   CredentialInventoryMatch,
   CredentialResponseAction,
@@ -106,14 +107,22 @@ export const analyzeCredentialIncident = (
 
 export const matchCredentialInventory = (
   analysis: CredentialIncidentAnalysis,
-  inventoryNames: string[],
+  environments: CredentialEnvironmentInventory[],
 ): CredentialInventoryMatch[] => {
   const exposedSet = new Set(analysis.exposedNames);
+  const inventoryNames = unique(environments.flatMap(environment => environment.credentialNames)).sort();
   return inventoryNames
     .filter(name => exposedSet.has(name))
     .map(name => {
       const service = ruleForName(name);
-      return { name, service: service.label, severity: service.severity };
+      return {
+        name,
+        service: service.label,
+        severity: service.severity,
+        environments: environments
+          .filter(environment => environment.credentialNames.includes(name))
+          .map(({ id, label, system }) => ({ id, label, system })),
+      };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 };
@@ -125,6 +134,7 @@ export const buildCredentialResponseActions = (
   owner: string,
 ): CredentialResponseAction[] => {
   const affectedNames = matches.map(match => match.name);
+  const affectedEnvironments = unique(matches.flatMap(match => match.environments.map(environment => environment.label)));
   const label = namesLabel(matches) || '尚未命中的憑證';
   const base = `${Date.now().toString(36)}_${affectedNames.join('_').toLowerCase() || 'no_match'}`;
   return [
@@ -134,6 +144,7 @@ export const buildCredentialResponseActions = (
       title: '撤銷舊憑證',
       detail: affectedNames.length ? `先在原服務停用 ${label}，不要只覆寫部署設定。` : '確認其他部署與歷史環境沒有使用公告中的憑證。',
       affectedNames,
+      affectedEnvironments,
       owner,
       status: 'PENDING',
     },
@@ -143,6 +154,7 @@ export const buildCredentialResponseActions = (
       title: '重建最小權限憑證',
       detail: affectedNames.length ? '建立新憑證，縮小權限、限制 API，並分開正式與測試環境。' : '若後續發現命中，依最小權限原則建立替代憑證。',
       affectedNames,
+      affectedEnvironments,
       owner,
       status: 'PENDING',
     },
@@ -152,6 +164,7 @@ export const buildCredentialResponseActions = (
       title: '更新部署並重新發布',
       detail: '更新受影響環境的秘密設定、重新部署，再確認舊版本與預覽環境沒有殘留。',
       affectedNames,
+      affectedEnvironments,
       owner,
       status: 'PENDING',
     },
@@ -161,6 +174,7 @@ export const buildCredentialResponseActions = (
       title: '檢查用量、帳單與存取紀錄',
       detail: '從事件開始時間往前檢查異常請求、來源、額度與費用，保留供應商紀錄。',
       affectedNames,
+      affectedEnvironments,
       owner,
       status: 'PENDING',
     },
@@ -170,6 +184,7 @@ export const buildCredentialResponseActions = (
       title: '驗證新版本並封存事件',
       detail: '確認服務正常、舊憑證已失效，並將完成時間與證據雜湊寫入 Trust Timeline。',
       affectedNames,
+      affectedEnvironments,
       owner,
       status: 'PENDING',
     },

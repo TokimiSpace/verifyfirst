@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { VerifyRequestError, type PaymentRequiredEnvelope, type VerifyResult } from '@ifandonlyif/x402-preflight';
+import {
+  computeFingerprint,
+  computePayeeFingerprint,
+  FINGERPRINT_VERSION,
+  VerifyRequestError,
+  type PaymentOption,
+  type PaymentRequiredEnvelope,
+  type VerifyResult,
+} from '@ifandonlyif/x402-preflight';
 import { preflightX402Response, verifyX402Requirement } from '../services/iffX402';
 
 const paymentRequired: PaymentRequiredEnvelope = {
@@ -13,10 +21,13 @@ const paymentRequired: PaymentRequiredEnvelope = {
   }],
 };
 
+const localFingerprint = (await computeFingerprint(paymentRequired.accepts as PaymentOption[]))!;
+const localPayeeFingerprint = (await computePayeeFingerprint(paymentRequired.accepts as PaymentOption[]))!;
+
 const verifyResult = (verdict: VerifyResult['verdict']): VerifyResult => ({
   url: 'https://merchant.example/quote',
   verdict,
-  received: { set_fingerprint: 'received-set', option_fingerprints: ['received-option'] },
+  received: { set_fingerprint: localFingerprint.setFingerprint, option_fingerprints: localFingerprint.optionFingerprints },
   observed: {
     set_fingerprint: 'observed-set',
     option_fingerprints: ['observed-option'],
@@ -59,6 +70,12 @@ describe('IFF x402 preflight integration', () => {
     );
 
     expect(result).toMatchObject({ status: 'VERIFIED', verdict: 'unobserved' });
+    expect(result).toMatchObject({
+      fingerprintVersion: FINGERPRINT_VERSION,
+      localReceivedFingerprint: localFingerprint.setFingerprint,
+      localPayeeFingerprint: localPayeeFingerprint.payeeSetFingerprint,
+      receivedFingerprintMatchesLocal: true,
+    });
     expect(verifyFn).toHaveBeenCalledWith(
       'https://merchant.example/quote',
       paymentRequired,
@@ -208,6 +225,23 @@ describe('IFF x402 preflight integration', () => {
       status: 'UNAVAILABLE',
       evidenceSource: 'UNAVAILABLE',
       errorCode: 'IFF_INVALID_RESPONSE',
+    });
+  });
+
+  it('fails closed when IFF received fingerprints differ from the local v0.2 canonical result', async () => {
+    const result = await verifyX402Requirement(
+      'https://merchant.example/quote',
+      paymentRequired,
+      { verifyFn: async () => ({
+        ...verifyResult('consistent'),
+        received: { set_fingerprint: 'unexpected-set', option_fingerprints: ['unexpected-option'] },
+      }) },
+    );
+
+    expect(result).toMatchObject({
+      status: 'UNAVAILABLE',
+      evidenceSource: 'UNAVAILABLE',
+      errorCode: 'IFF_RECEIVED_FINGERPRINT_MISMATCH',
     });
   });
 

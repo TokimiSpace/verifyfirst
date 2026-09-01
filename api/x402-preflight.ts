@@ -18,7 +18,7 @@ const rateLimits = new Map<string, { windowStart: number; count: number }>();
 export const X402_RESPONSE_SCHEMA = 'verifyfirst.x402-preflight-response.v1' as const;
 export const X402_EVIDENCE_SCHEMA = 'verifyfirst.x402-preflight.v1' as const;
 export const X402_POLICY_VERSION = 'verifyfirst.x402-enterprise-policy.v1' as const;
-export const X402_IFF_SDK = '@ifandonlyif/x402-preflight@0.1.0' as const;
+export const X402_IFF_SDK = '@ifandonlyif/x402-preflight@0.2.0' as const;
 
 export interface EnterpriseX402PreflightInput {
   endpointUrl: string;

@@ -146,6 +146,12 @@ export interface IffX402Preflight {
   reportHash?: string;
   receivedFingerprint?: string;
   receivedOptionFingerprints?: string[];
+  fingerprintVersion?: number;
+  localReceivedFingerprint?: string;
+  localReceivedOptionFingerprints?: string[];
+  localPayeeFingerprint?: string;
+  localPayeeOptionFingerprints?: string[];
+  receivedFingerprintMatchesLocal?: boolean;
   observedFingerprint?: string;
   observedOptionFingerprints?: string[];
   unmatchedReceivedOptions?: string[];
@@ -392,6 +398,18 @@ export interface CredentialInventoryMatch {
   name: string;
   service: string;
   severity: CredentialIncidentSeverity;
+  environments: Array<{
+    id: string;
+    label: string;
+    system: string;
+  }>;
+}
+
+export interface CredentialEnvironmentInventory {
+  id: string;
+  label: string;
+  system: string;
+  credentialNames: string[];
 }
 
 export interface CredentialResponseAction {
@@ -400,6 +418,7 @@ export interface CredentialResponseAction {
   title: string;
   detail: string;
   affectedNames: string[];
+  affectedEnvironments: string[];
   owner: string;
   status: CredentialActionStatus;
   completedAt?: string;
@@ -407,9 +426,10 @@ export interface CredentialResponseAction {
 }
 
 export interface CredentialIncidentWorkspace {
-  version: 1;
+  version: 2;
   analysis: CredentialIncidentAnalysis;
   inventoryNames: string[];
+  environments: CredentialEnvironmentInventory[];
   matches: CredentialInventoryMatch[];
   actions: CredentialResponseAction[];
   timeline: TrustTimelineEvent[];

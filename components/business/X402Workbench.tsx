@@ -68,6 +68,7 @@ const COPY = {
     iffScenario: '模擬 IFF verdict', input: '01 · 提交資料', policy: '02 · 企業政策', result: '03 · 判定與交接',
     noResult: '執行後會分開顯示企業政策與 IFF evidence，並產生可下載的 Evidence Packet。',
     policyDecision: '企業政策判定', iffEvidence: 'IFF 外部證據', payment: '付款執行', notExecuted: 'NOT EXECUTED',
+    canonicalMatch: '本機 canonical 指紋吻合', payeeFingerprint: '收款方指紋',
     selected: '候選 option', notBound: 'NOT BOUND', download: '下載 Evidence Packet',
     liveSource: 'LIVE · IFANDONLYIF PUBLIC API', localSource: 'LOCAL POLICY SANDBOX',
     ready: '可進入人工／錢包政策審批', hold: '暫停並修正或複核',
@@ -88,6 +89,7 @@ const COPY = {
     iffScenario: 'Simulated IFF verdict', input: '01 · INPUT', policy: '02 · ENTERPRISE POLICY', result: '03 · DECISION & HANDOFF',
     noResult: 'Run a check to see enterprise policy and IFF evidence separately, then download an Evidence Packet.',
     policyDecision: 'Enterprise policy decision', iffEvidence: 'IFF external evidence', payment: 'Payment execution', notExecuted: 'NOT EXECUTED',
+    canonicalMatch: 'Local canonical fingerprint matched', payeeFingerprint: 'Payee fingerprint',
     selected: 'Candidate option', notBound: 'NOT BOUND', download: 'Download Evidence Packet',
     liveSource: 'LIVE · IFANDONLYIF PUBLIC API', localSource: 'LOCAL POLICY SANDBOX',
     ready: 'Ready for human / wallet policy review', hold: 'Hold for correction or review',
@@ -108,6 +110,7 @@ const COPY = {
     iffScenario: 'IFF verdict mô phỏng', input: '01 · DỮ LIỆU', policy: '02 · POLICY DOANH NGHIỆP', result: '03 · QUYẾT ĐỊNH & BÀN GIAO',
     noResult: 'Chạy để xem riêng policy doanh nghiệp và bằng chứng IFF, rồi tải Evidence Packet.',
     policyDecision: 'Quyết định policy', iffEvidence: 'Bằng chứng IFF', payment: 'Thực hiện thanh toán', notExecuted: 'NOT EXECUTED',
+    canonicalMatch: 'Fingerprint canonical cục bộ khớp', payeeFingerprint: 'Fingerprint người nhận',
     selected: 'Option ứng viên', notBound: 'NOT BOUND', download: 'Tải Evidence Packet',
     liveSource: 'LIVE · IFANDONLYIF PUBLIC API', localSource: 'LOCAL POLICY SANDBOX',
     ready: 'Sẵn sàng cho người/ví duyệt policy', hold: 'Tạm dừng để sửa hoặc xem lại',
@@ -324,7 +327,7 @@ const X402Workbench: React.FC<X402WorkbenchProps> = ({ language, records, onBack
               <div><dt>{t.payment}</dt><dd>{t.notExecuted}</dd></div>
             </dl>
             <div className="vf-x402-options">{result.policy.optionChecks.map(check => <article key={check.index} className={check.matchesPolicy ? 'is-match' : 'is-mismatch'}><span>OPTION {check.index + 1}</span><strong>{check.option.amount} · {short(check.option.asset)}</strong><p>{check.matchesPolicy ? 'ALL POLICY FIELDS MATCH' : check.mismatchReasons.join(' · ')}</p></article>)}</div>
-            {result.iff && <div className="vf-iff-summary"><small>{mode === 'LIVE' ? `${result.iff.evidenceSource} · ${result.iff.evidenceBaseUrl ?? 'NO RESOLVED SOURCE'}` : t.localSource}</small><code>received {short(result.iff.receivedFingerprint)} / observed {short(result.iff.observedFingerprint)}</code><span>{result.iff.inclusionAvailable ? `LOG #${result.iff.inclusionLogIndex ?? '—'} / ${result.iff.inclusionTreeSize ?? '—'}` : 'NO INCLUSION PROOF'}</span></div>}
+            {result.iff && <div className="vf-iff-summary"><small>{mode === 'LIVE' ? `${result.iff.evidenceSource} · SDK 0.2.0 · canonical v${result.iff.fingerprintVersion ?? '—'}` : t.localSource}</small><code>received {short(result.iff.receivedFingerprint)} / observed {short(result.iff.observedFingerprint)}</code>{result.iff.localPayeeFingerprint && <code>{t.payeeFingerprint} · {short(result.iff.localPayeeFingerprint, 14, 8)}</code>}{result.iff.receivedFingerprintMatchesLocal && <b><Check size={12} />{t.canonicalMatch}</b>}<span>{result.iff.inclusionAvailable ? `LOG #${result.iff.inclusionLogIndex ?? '—'} / ${result.iff.inclusionTreeSize ?? '—'}` : 'NO INCLUSION PROOF'}</span></div>}
             {packet && <button className="vf-primary-button vf-x402-download" onClick={() => downloadJson(packet, `verifyfirst-x402-${Date.now()}.json`)}><Download size={14} />{t.download}</button>}
           </> : <div className="vf-result-empty"><CircleDollarSign size={29} /><strong>POLICY × IFF EVIDENCE</strong><p>{t.noResult}</p></div>}
         </div>

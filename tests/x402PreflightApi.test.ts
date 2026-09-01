@@ -69,7 +69,7 @@ describe('enterprise x402 preflight', () => {
     expect(result.execution).toEqual({ status: 'NOT_EXECUTED', payment: 'NOT_EXECUTED', selectedOption: 'NOT_BOUND' });
     expect(result.verifier).toEqual({
       policyVersion: 'verifyfirst.x402-enterprise-policy.v1',
-      iffSdk: '@ifandonlyif/x402-preflight@0.1.0',
+      iffSdk: '@ifandonlyif/x402-preflight@0.2.0',
     });
   });
 

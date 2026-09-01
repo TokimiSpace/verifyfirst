@@ -39,19 +39,37 @@ describe('credential incident response', () => {
     expect(JSON.stringify(inventory)).not.toContain(liveValue);
 
     const analysis = analyzeCredentialIncident(incidentNotice);
-    expect(matchCredentialInventory(analysis, inventory).map(match => match.name)).toEqual([
+    const environments = [{ id: 'env_prod', label: 'Production', system: 'API', credentialNames: inventory }];
+    expect(matchCredentialInventory(analysis, environments).map(match => match.name)).toEqual([
       'GEMINI_API_KEY', 'OPENAI_API_KEY',
     ]);
+    expect(JSON.stringify(environments)).not.toContain(liveValue);
+  });
+
+  it('associates one exposed name with every affected enterprise environment', () => {
+    const analysis = analyzeCredentialIncident(incidentNotice);
+    const matches = matchCredentialInventory(analysis, [
+      { id: 'env_prod', label: 'Production', system: 'Vercel', credentialNames: ['OPENAI_API_KEY'] },
+      { id: 'env_preview', label: 'Preview', system: 'Cloudflare', credentialNames: ['OPENAI_API_KEY', 'UNRELATED_FLAG'] },
+    ]);
+
+    expect(matches[0]).toMatchObject({
+      name: 'OPENAI_API_KEY',
+      environments: [{ label: 'Production' }, { label: 'Preview' }],
+    });
   });
 
   it('builds the five required remediation phases', () => {
     const analysis = analyzeCredentialIncident(incidentNotice);
-    const matches = matchCredentialInventory(analysis, ['OPENAI_API_KEY']);
+    const matches = matchCredentialInventory(analysis, [{
+      id: 'env_prod', label: 'Production', system: 'API', credentialNames: ['OPENAI_API_KEY'],
+    }]);
     const actions = buildCredentialResponseActions(matches, 'Security owner');
 
     expect(actions.map(action => action.phase)).toEqual(['REVOKE', 'REISSUE', 'DEPLOY', 'REVIEW', 'VERIFY']);
     expect(actions.every(action => action.owner === 'Security owner')).toBe(true);
     expect(actions.every(action => action.affectedNames.includes('OPENAI_API_KEY'))).toBe(true);
+    expect(actions.every(action => action.affectedEnvironments.includes('Production'))).toBe(true);
   });
 
   it('creates a real SHA-256 evidence identifier', async () => {
@@ -59,4 +77,3 @@ describe('credential incident response', () => {
     expect(evidenceId).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 });
-
