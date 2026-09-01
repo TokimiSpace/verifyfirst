@@ -1,516 +1,644 @@
-# VerifyFirst (verify1st.tw)
+# VerifyFirst（verify1st.tw）
 
-VerifyFirst contains two deliberately separated product surfaces:
+**繁體中文** ｜ [English](README.en.md)
 
-| Surface | Audience | Stability | URL |
-|---|---|---|---|
-| **Personal anti-scam assistant (To C)** | People checking suspicious messages, links, calls, accounts, or screenshots | Public product | [verify1st.tw](https://verify1st.tw/) |
-| **Enterprise trust lab (To B)** | Compliance, risk, security, and Agent-platform teams | **Experimental** — no SLA, not for production decisions | [verify1st.tw/business/](https://verify1st.tw/business/) |
+VerifyFirst 是一個完全開源的「先驗證，再行動」平台。專案把兩種使用情境刻意分開：
 
-The To C product is multilingual (Traditional Chinese, English, and Vietnamese).
-It asks how far an incident has progressed, checks public evidence, and turns the
-result into an on-device safety conversation for verification, loss prevention,
-and reporting. Users are explicitly told not to paste passwords, OTPs, full card
-numbers, ID numbers, or secret keys.
-
-The To B lab contains the deterministic Agent policy gate, credential-incident
-response, Trust Pathways scenarios, vLEI lifecycle verifier, Evidence Packets,
-revocation, and IFF x402 preflight. Its two primary controls answer different
-questions: vLEI checks legal-entity and representative-authority evidence;
-x402 checks whether a payment requirement matches independent evidence and the
-enterprise's stated payment policy. They remain separate instead of being
-collapsed into one trust score. Every To B entry is marked experimental and
-states its trust boundary.
-
-See [Product Boundaries](docs/PRODUCT_BOUNDARIES.md) before extending or
-deploying either surface.
-
-VerifyFirst's original code is open source under MIT; redistributed fixtures
-and upstream verifier/schema material retain their documented Apache-2.0 terms.
-The enterprise verification core does not require a private LLM service:
-deterministic policy, GLEIF lookup, local CESR/document hashing, simulation, and
-Evidence export remain inspectable and self-hostable. See
-[Self-hosting](docs/SELF_HOSTING.md) and
-[Third-party notices](THIRD_PARTY_NOTICES.md).
-
-Every pull request runs the same typecheck, test, and production-build gates
-documented below. Dependency update proposals are generated from the reviewed
-`package-lock.json`.
-
-## Features
-
-### To C — personal anti-scam
-
-- **Guided intake** — captures only the contact channel and whether the person
-  received, opened, shared information, or already paid
-- **Multi-input analysis** — SMS/text, suspicious URLs (including bare domains),
-  phone numbers, accounts, screenshots with client-side OCR, and `.txt` files
-- **Evidence before AI** — RDAP, Google Safe Browsing, ScamSniffer,
-  VirusTotal, DNS, and Cofacts; active server-side URL observation is a
-  separately enabled operator feature and is off by default
-- **Safety conversation** — turns the current result and incident stage into
-  immediate, multilingual recovery, verification, and reporting steps; chat
-  stays in page memory and never requests credentials
-- **Hard safety floors** — confirmed blocklist hits clamp the verdict in code;
-  model output cannot override them
-- **Senior Mode** — larger type, simpler language, and direct access to 165
-
-### To B — enterprise trust lab (experimental)
-
-- **Agent policy gate** — deterministic `ALLOW`, `REQUIRE_CONFIRMATION`, or
-  `DENY` through the UI and `POST /api/agent-policy`
-- **Revocable authorization and Evidence Packets** — purpose, target, expiry,
-  action boundaries, SHA-256 evidence, and a local Trust Timeline
-- **Credential incident response** — compares environment-variable names
-  locally, never secret values, and builds accountable remediation tasks
-- **Live legal-entity lookup** — queries the official GLEIF Golden Copy by LEI,
-  with bounded responses and no synthetic fallback
-- **Local vLEI / CESR verification** — accepts pasted or local CESR up to 128
-  KiB and verifies SAIDs, KEL signatures, official ACDC schemas, TEL anchoring,
-  registry-controller ownership, expiry, and an explicitly selected production
-  or fixture trust root
-- **Trust Pathways** — cross-organization scenarios at `/trust-pathways/`
-- **Update Trust** — vLEI / KERI / ACDC / TEL lifecycle verification at
-  `/update-trust/`
-- **IFF x402 preflight** — compares an observed payment requirement with
-  independent evidence; it never holds keys, signs, or pays
-
-#### Two enterprise controls, two different decisions
-
-| Control | Business question | Typical owner | Submission | Result |
+| 產品介面 | 對象 | 解決的問題 | 穩定性 | 入口 |
 |---|---|---|---|---|
-| **vLEI legal entity and authority** | Which legal entity is represented, and does the submitted credential chain support that relationship? | Compliance, legal-entity governance, IAM, security | A 20-character LEI, a pasted or local CESR stream up to 128 KiB, and an explicit production or fixture trust root | GLEIF record provenance, cryptographic checks, terminal-LEI cross-check, decision code, limitations, and unsigned Evidence JSON |
-| **x402 payment requirement** | Does the received x402 v2 requirement agree with IFF evidence and this enterprise's allowed network, asset, payee, and maximum amount? | Finance, treasury, procurement, payment engineering | A sanitized endpoint URL plus pasted or local `Payment-Required` JSON, then `network`, `asset`, `payee`, and `maxAmount` policy fields | IFF evidence and the local enterprise-policy decision shown separately, divergence details, limitations, and unsigned Evidence JSON |
+| 個人反詐助手（To C） | 一般使用者、長輩、移工與第一線協助者 | 收到可疑訊息後，不知道先停損、查證還是報案 | 公開產品 | [verify1st.tw](https://verify1st.tw/) |
+| 企業信任實驗室（To B） | 法遵、資安、IAM、採購、財務與 Agent 平台團隊 | 身分、授權、付款條件與事件處置缺乏可重跑的驗證證據 | **實驗性質，無 SLA** | [verify1st.tw/business/](https://verify1st.tw/business/) |
 
-Neither control executes the action it evaluates. A vLEI result does not make
-VerifyFirst a QVI or allow it to issue a vLEI. An x402 `consistent` result does
-not mean that a merchant is safe, that payment is authorized, or that delivery
-will occur.
+To C 支援繁體中文、英文與越南文，先詢問事件進度，再查核公開證據，最後把結果轉成止損、查證與報案步驟。To B 不用 LLM 取代驗證器，而是用確定性政策、官方 GLEIF 資料、瀏覽器端 CESR 密碼學驗證、IFF x402 證據與可下載 Evidence Packet，協助企業建立可檢查的導入路徑。
 
-Both controls support two adoption depths. **Guided adoption** uses labeled
-fields, official lookups, local document digests, pinned examples, and
-downloadable handoff packages without requiring an internal engineering team.
-**Technical integration** accepts CESR or x402 JSON, runs live checks, and
-returns machine-readable Evidence that an existing API, LLM workflow, or
-chatbot may consume. Secrets and raw supporting documents never belong in the
-LLM path.
+> VerifyFirst 是查核、政策預檢與交接工具，不是銀行、錢包、QVI、vLEI 發證方、支付執行器或法律意見提供者。企業實驗室的 LIVE 結果仍須接上組織自己的信任根、授權、後端復驗、稽核保存與執行系統。
 
-##### vLEI modes and production gap
+## 目錄
 
-- **Live-data preflight** queries the official GLEIF Golden Copy for the LEI
-  and verifies the supplied CESR in the browser under the selected production
-  root. Raw CESR remains in browser memory; only a bounded summary and digest
-  may enter the local Trust Timeline.
-- **Simulation / self-test** uses a commit-pinned upstream regression fixture
-  from `GLEIF-IT/vlei-verifier` and its test trust root. The interface must
-  label this result as fixture or sandbox evidence, never as a real company's
-  credential, formal issuance, endorsement, or production authorization.
-- **Production still requires** live OOBI resolution, witness receipts,
-  watcher-based duplicity detection, current TEL / revocation retrieval, a
-  backend verifier, the organization's root allow-list and policy, and an
-  independently protected or signed evidence channel.
-- **Issuance boundary:** VerifyFirst verifies submitted material and produces
-  review evidence. It does not apply for, issue, sign, renew, or revoke a vLEI,
-  and it does not claim QVI status.
+- [產品原則](#產品原則)
+- [系統架構](#系統架構)
+- [路由與模組](#路由與模組)
+- [資訊流](#資訊流)
+- [資料分類、保存與外部傳輸](#資料分類保存與外部傳輸)
+- [Evidence 與決策模型](#evidence-與決策模型)
+- [API 與失敗行為](#api-與失敗行為)
+- [技術棧與專案結構](#技術棧與專案結構)
+- [本機開發](#本機開發)
+- [環境變數](#環境變數)
+- [部署與自架](#部署與自架)
+- [測試、貢獻與授權](#測試貢獻與授權)
 
-##### x402 modes and production gap
+## 產品原則
 
-- **Live preflight** accepts an endpoint identifier and x402 v2
-  `Payment-Required` JSON. Before the requirement is sent through the
-  VerifyFirst API to IFF, URL credentials, query parameters, and fragments are
-  removed. The workspace does not fetch the merchant endpoint in this flow.
-- **Simulation** produces clearly labeled synthetic IFF verdicts for training
-  and policy testing. It does not contact IFF and must not be presented as an
-  external observation.
-- **Outputs stay separate:** IFF may report `consistent`, `diverged`, `stale`,
-  or `unobserved`; VerifyFirst independently compares the requirement with the
-  submitted network, asset, payee, and maximum-amount policy. The Evidence JSON
-  carries an unsigned SHA-256 self-check and always records
-  `execution.status: "NOT_EXECUTED"`.
-- **Production still requires** enterprise authorization, budget and payee
-  governance, wallet / signer isolation, settlement handling, monitoring and
-  an execution adapter outside VerifyFirst. IFF unavailability or invalid
-  evidence must not be converted into a passing decision.
-- **Payment boundary:** VerifyFirst never accepts a private key, signs a
-  transaction, moves funds, or guarantees merchant safety or delivery.
+1. **Evidence before AI**：客觀來源與確定性規則優先；LLM 負責整理與說明，不能推翻程式碼中的封鎖下限或擴張授權。
+2. **兩個問題、兩條決策**：vLEI 回答「誰代表哪個法人、憑證鏈是否支持該關係」；x402 回答「收到的付款要求是否符合外部觀測與企業政策」。兩者不合成模糊的單一信任分數。
+3. **執行與驗證分離**：所有企業結果都明確標示 <code>NOT_EXECUTED</code>；平台不登入、不索取 OTP、不持有錢包私鑰、不簽交易、不付款。
+4. **秘密最小化**：憑證外洩應變只比對環境變數名稱；本機文件只輸出雜湊與中繼資料；原始 CESR 不寫入 localStorage。
+5. **fail closed**：資料來源失敗、證據過期、格式錯誤、信任根不符或 IFF 無法使用時，不會自動改成通過或偷偷使用模擬結果。
+6. **模擬必須可辨識**：fixture、sandbox、simulation 與 LIVE 在資料來源、畫面與輸出中都分開標示。
+7. **公開格式可長期驗證**：Evidence Schema 採版本化且已發布版本不可變；新欄位或驗證器契約使用新版本。
+8. **自架優先**：企業確定性核心不依賴私有 LLM API；Vercel 是參考 adapter，不是 Evidence 格式或瀏覽器驗證邏輯的必要條件。
 
-Do not submit passwords, API tokens, wallet private keys, seed phrases, OTPs,
-or personal records to either workspace. Submission files should contain only
-the credential or payment-requirement material needed for the selected check.
+更完整的產品邊界請閱讀 [docs/PRODUCT_BOUNDARIES.md](docs/PRODUCT_BOUNDARIES.md)。
 
-## Tech Stack
+## 系統架構
 
-- **Frontend**: React 19, TypeScript, build-time Tailwind utilities plus
-  repository-owned CSS design tokens, Vite
-- **AI**: Google Gemini 2.5 Flash with Google Search grounding
-- **Backend**: Vercel Serverless Functions
-- **Caching**: bounded 72-hour warm-instance memory cache; no metered storage operations
-- **OCR**: tesseract.js (lazy-loaded, in-browser)
+### 高階元件圖
 
-## How an Analysis Works
+~~~mermaid
+flowchart TB
+  subgraph Users["使用者與企業系統"]
+    C["To C 使用者"]
+    B["企業操作人員"]
+    S["企業 API／LLM／Chatbot"]
+  end
 
-1. Input is classified (URL / SMS text / phone) and sanitized
-2. Known example chips short-circuit with canned responses (zero upstream
-   quota). An exact operator-listed VerifyFirst hostname adds an identity hint
-   only; it never bypasses checks or creates a safety verdict
-3. Objective facts are gathered in parallel: RDAP, Safe Browsing, ScamSniffer,
-   VirusTotal, DNS, and Cofacts. If the deployer explicitly enables server-side
-   page observation, URLs are also fetched under a restricted-egress
-   requirement. An observed x402 `402` response is preflighted through IFF
-   before it is surfaced.
-4. Gemini analyzes with search grounding, receiving the facts as ground truth
-5. Code-level post-processing: blocklist verdict floors, low-evidence
-   normalization, and PII masking
-6. The result enters a bounded 72-hour warm-instance memory cache. Cold starts
-   begin empty, intentionally trading shared persistence for zero metered
-   storage operations
+  subgraph Browser["瀏覽器：React 19 + TypeScript"]
+    R["index.tsx 路由切分"]
+    TC["To C 反詐介面"]
+    TB["To B 企業實驗室"]
+    OCR["Tesseract.js 本機 OCR"]
+    LOCAL["本機確定性服務<br/>政策、雜湊、CESR、事件比對"]
+    LS["localStorage<br/>企業摘要／Timeline"]
+    DL["本機 JSON 下載"]
+  end
 
-### To C data flow and retention
+  subgraph API["Node.js 20 Serverless API"]
+    ANALYZE["POST /api/analyze"]
+    POLICY["POST /api/agent-policy"]
+    X402["POST /api/x402-preflight"]
+    MEM["有界 warm-instance<br/>快取與 rate limit"]
+  end
 
-The To C form is an external analysis flow, not a local content-isolation
-sandbox. When a user submits:
+  subgraph External["外部證據與分析服務"]
+    GEMINI["Google Gemini<br/>Search grounding"]
+    PUBLIC["RDAP／DNS／Safe Browsing<br/>VirusTotal／Cofacts／ScamSniffer"]
+    GLEIF["GLEIF Golden Copy API"]
+    IFF["ifandonlyif.io<br/>x402 evidence"]
+    SHEETS["選配 Google Sheets<br/>無內容指標"]
+  end
 
-- The validated text, phone number, or URL goes to `POST /api/analyze`.
-- Gemini receives that input plus the gathered evidence. Cofacts may receive up
-  to the first 100 characters; enabled Safe Browsing receives the URL;
-  VirusTotal, RDAP, and DNS receive the domain or hostname. ScamSniffer lists
-  are downloaded by the server rather than receiving the submitted input.
-- Screenshot OCR runs in the browser. The screenshot itself is not submitted
-  by this form, but the extracted text is submitted when the user starts a
-  check.
-- The completed result, which includes the normalized input, may remain in a
-  bounded warm-server memory cache for up to 72 hours. It is not written to
-  Vercel Blob.
-- If `GOOGLE_SHEETS_WEBHOOK_URL` is configured, the webhook receives only
-  content-free metrics: submission id/time, language, input type and length,
-  scores, final decision, and risk-signal types. Raw or sanitized input,
-  narrative fields, and quoted evidence are excluded.
-- Server-side page observation is off by default. `ENABLE_URL_OBSERVATION=true`
-  allows the server to fetch the submitted URL and redirects. Enable it only
-  behind restricted outbound networking; application hostname checks cannot
-  fully eliminate DNS-rebinding risk.
+  C --> TC
+  B --> TB
+  S --> POLICY
+  S --> X402
+  R --> TC
+  R --> TB
+  TC --> OCR
+  TC --> ANALYZE
+  TB --> LOCAL
+  TB --> GLEIF
+  TB --> X402
+  TB --> POLICY
+  TB --> LS
+  TB --> DL
+  ANALYZE --> PUBLIC
+  ANALYZE --> GEMINI
+  ANALYZE --> MEM
+  ANALYZE -. "僅啟用時" .-> SHEETS
+  X402 --> IFF
+~~~
 
-Do not submit passwords, OTPs, full payment-card or identity numbers, wallet
-seed phrases, private keys, or other secrets.
+### 分層責任
 
-## How the Experimental Agent Filter Works
+| 層級 | 主要檔案 | 責任 | 不負責的事 |
+|---|---|---|---|
+| 路由與產品切分 | <code>index.tsx</code> | 依 pathname lazy-load To C 或 To B，避免兩個產品互相污染 | 不做安全判定 |
+| To C UI | <code>App.tsx</code>、<code>components/consumer/</code> | 情境詢問、輸入、OCR、結果、長輩模式、本機安全對話 | 不直接呼叫第三方情報 API |
+| To B UI | <code>apps/business/BusinessApp.tsx</code>、<code>components/business/</code> | LEI／vLEI、x402、事件應變、Agent 沙盒、Timeline 與 Evidence 下載 | 不執行付款或正式發證 |
+| 瀏覽器服務 | <code>services/</code> | 確定性政策、CESR 驗證、SHA-256、自有資料格式、GLEIF／API client | LLM 不參與企業判定 |
+| Serverless API | <code>api/</code> | 輸入驗證、速率限制、外部服務協調、結果正規化與 fail-closed | 不保存到 Vercel Blob |
+| 公開 Schema | <code>public/schemas/</code> | 讓 Evidence consumer 驗證版本與欄位 | 不證明簽發者真實性 |
+| 深度示範 | <code>public/trust-pathways/</code>、<code>public/update-trust/</code> | 情境教學、vLEI lifecycle 與技術診斷 | 不等於正式 production verifier |
 
-1. Resolve the Agent identity and the user it represents
-2. Reject a mismatched, expired, or revoked grant before any tool runs
-3. Require the request purpose and target to match the short-lived mandate
-4. Compare the requested action with the grant's allow / confirm / deny lists
-5. Cap personal data, login, OTP, and downloads at human confirmation; never
-   sign or execute payment
-6. Seal the full result into an Evidence Packet and log it in Trust Timeline
+### 信任邊界
 
-The policy gate is deterministic by design: model output can explain a risk,
-but it cannot expand permissions or override a denial. The browser workspace is
-functional without an external account and persists locally. Its authorization
-is caller-supplied sandbox policy—not a cryptographically verified production
-Mandate. A production caller must verify vLEI / signed Mandate evidence before
-consuming the decision.
+~~~mermaid
+flowchart LR
+  U["使用者提供的內容<br/>不受信任"] --> V["大小、格式、型別、URL 與欄位驗證"]
+  V --> D["確定性規則／密碼學驗證"]
+  V --> E["外部來源"]
+  D --> P["政策決策"]
+  E --> P
+  P --> H["人類覆核／企業後端"]
+  H --> X["真正的業務執行<br/>不在 VerifyFirst 內"]
 
-### Agent Policy API
+  LLM["LLM 說明層"] -. "可解釋，不可擴權" .-> P
+~~~
 
-`POST /api/agent-policy` accepts `{ grant, request }` and returns a deterministic
-policy result, a SHA-256 Evidence Packet, and an explicit
-`execution.status: "NOT_EXECUTED"` boundary. It never receives secret values;
-`dataFields` contains names only.
+所有 caller-supplied 內容、外部 API 回應、CESR、x402 JSON 與歷史 localStorage 都視為不受信任資料。系統在進入判定前進行型別、長度、來源、時效與結構檢查；production 執行仍由 VerifyFirst 外部的受控系統完成。
 
-```bash
-curl -X POST https://verify1st.tw/api/agent-policy \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "grant": {
-      "id": "grant_01",
-      "agentId": "agent_01",
-      "agentName": "Compliance Agent",
-      "agentPurpose": "Inspect supplier records",
-      "userName": "Risk owner",
-      "status": "ACTIVE",
-      "issuedAt": "2026-08-30T00:00:00.000Z",
-      "expiresAt": "2026-08-31T00:00:00.000Z",
-      "allowedTargets": ["https://supplier.example"],
-      "allowedActions": ["OBSERVE_URL"],
-      "confirmationActions": ["SUBMIT_PERSONAL_DATA"],
-      "deniedActions": ["LOGIN", "PAYMENT", "REQUEST_OTP", "DOWNLOAD_APP"]
-    },
-    "request": {
-      "id": "req_01",
-      "grantId": "grant_01",
-      "action": "OBSERVE_URL",
-      "target": "https://supplier.example/profile/42",
-      "purpose": "Inspect supplier records",
-      "dataFields": []
-    }
-  }'
-```
+## 路由與模組
 
-### IFF x402 preflight boundary
+| 路由 | 模組 | 執行位置 | 說明 |
+|---|---|---|---|
+| <code>/</code> | 個人反詐助手 | 瀏覽器 + <code>/api/analyze</code> | 繁中／英／越、長輩模式、OCR、公開證據與安全步驟 |
+| <code>/business/</code> | 企業實驗室總覽 | 瀏覽器 | 兩種導入深度與所有企業工具入口 |
+| <code>/business/?module=vlei&section=lei</code> | LEI 查詢 | 瀏覽器 → GLEIF | 查官方 Golden Copy；查不到或不符合格式即失敗 |
+| <code>/business/?module=vlei&section=vlei</code> | vLEI／CESR 預檢 | 瀏覽器 | SAID、KEL、ACDC edge、TEL、schema 與 trust root |
+| <code>/business/?module=x402&mode=live</code> | x402 LIVE 預檢 | 瀏覽器 → VerifyFirst API → IFF | 外部一致性證據與本地企業政策分開呈現 |
+| <code>/business/?module=x402&mode=simulation</code> | x402 模擬 | 瀏覽器 | 不呼叫 IFF，重播四種 verdict |
+| <code>/business/?module=incident</code> | 憑證外洩應變 | 瀏覽器 | 只比對秘密名稱，建立處置任務與 Timeline |
+| <code>/business/?module=audit</code> | Agent 政策控制面 | 瀏覽器 | 編輯／撤銷 sandbox grant、檢視 Timeline 與匯出 audit；request evaluation 由 API 提供 |
+| <code>/trust-pathways/</code> | Trust Pathways | 靜態頁 + demo backend | 五條跨組織情境與黑客松導覽 |
+| <code>/update-trust/</code> | vLEI lifecycle | 靜態頁／瀏覽器 | pinned fixture、SAID／KEL／TEL、撤銷與選擇性揭露 |
+| <code>/api/analyze</code> | To C 分析 API | Serverless | 公開資料查核、Gemini、後處理、快取 |
+| <code>/api/agent-policy</code> | Agent policy API | Serverless | 確定性授權閘門 |
+| <code>/api/x402-preflight</code> | x402 API | Serverless | 輸入驗證、本地政策、IFF 觀測與 v2 response |
 
-The enterprise workspace accepts a valid x402 v2 `Payment-Required` object and
-a sanitized endpoint identifier, then calls `@ifandonlyif/x402-preflight`
-through the VerifyFirst API. It preserves IFF's four verdicts — `consistent`,
-`diverged`, `stale`, and `unobserved` — without turning them into a hidden trust
-score, and displays IFF evidence separately from the enterprise's local
-network, asset, payee, and maximum-amount policy decision. Simulation mode uses
-clearly labeled synthetic verdicts and does not contact IFF.
+## 資訊流
 
-A matching requirement is evidence of consistency, not a guarantee that
-payment is safe or that the endpoint will deliver afterward. Every result is
-`NOT_EXECUTED`; the integration never holds a wallet key, signs, or pays.
-Public checks need no API key; `IFF_BASE_URL` exists only for staging or local
-IFF instances.
+### 1. To C 個人反詐資訊流
 
-## Enterprise vLEI Verification Workspace
+~~~mermaid
+sequenceDiagram
+  participant U as 使用者
+  participant B as 瀏覽器
+  participant A as /api/analyze
+  participant P as 公開證據服務
+  participant G as Gemini
+  participant M as Warm memory
 
-`/business/?module=vlei` is the canonical product-facing workflow. It brings
-the strongest reusable parts of both demo pages into one interface:
+  U->>B: 選事件階段與管道
+  U->>B: 貼文字／URL／電話／帳號，或選截圖
+  B->>B: 截圖 OCR；圖片留在瀏覽器
+  B->>A: 正規化後的文字、URL 或電話 + 語言
+  A->>A: 型別、長度、URL、範例與 rate limit 檢查
+  A->>M: 查 72 小時有界快取
+  alt 快取命中
+    M-->>A: 已正規化結果
+  else 未命中
+    par 公開事實查核
+      A->>P: RDAP／DNS／Safe Browsing／VirusTotal
+      A->>P: Cofacts 摘要查詢／ScamSniffer 清單
+    and AI 分析
+      A->>G: 使用者輸入 + 已整理事實 + grounding 指示
+    end
+    A->>A: blocklist 下限、低證據正規化、PII masking
+    A->>M: 寫入有界 warm-instance 快取
+  end
+  A-->>B: 結果、來源狀態、降級層級與行動建議
+  B->>B: 依事件階段產生本機安全對話
+  B-->>U: 先停損、官方查證、銀行／165／報案步驟
+~~~
 
-1. Enter an LEI to query the official GLEIF record.
-2. Paste or choose a CESR file; raw input remains in browser memory.
-3. Select the production GLEIF root or the clearly labeled regression-fixture
-   root.
-4. Run the canonical verifier from `public/update-trust/said.js` locally.
-5. Review the machine-readable `ALLOW_*` / `DENY_*` result, credential chain,
-   failed checks, and mandatory terminal-credential LEI cross-check. Upstream
-   issuer LEIs never satisfy this comparison.
-6. Export an unsigned local Evidence Packet with a deterministic SHA-256
-   self-check over the full decision, root, checks, credential summaries, LEI
-   provenance, freshness result, and source digest. This checksum detects a
-   changed body only when the expected checksum is obtained separately; it is
-   not a signature, timestamp, issuer-authenticity proof, or append-only log.
-   Only the bounded result summary and checksum enter the browser-local Trust
-   Timeline.
-7. Fill in the accountable owner, target system, and use case; optionally hash
-   bounded local supporting documents and export a QVI / engineering handoff
-   JSON. Only display labels, categories, MIME types, sizes, and SHA-256
-   digests are exported—never document contents.
+詳細規則：
 
-The browser verifier does not fetch live OOBI key state, verify witness
-receipts, or run watcher-based duplicity detection. Its output is evidence for
-review; production-root checks remain blocked from tool execution until a
-backend verifier repeats those live checks. The strict enterprise wrapper also
-rejects trailing/unconsumed CESR bytes, unsupported framing, issuer-to-registry
-mismatches, and violations of pinned schema SAIDs plus selected fail-closed
-field, edge, operator, AID, and LEI invariants. It does not claim to be a full
-Draft-07 JSON Schema engine. VerifyFirst is a verifier and sandbox here, not a
-QVI or vLEI issuer; fixture issuance and revocation exercises do not affect any
-real KEL, TEL, credential, or legal entity.
+1. 瀏覽器只把圖片 OCR 後的文字送出；這條表單不把截圖檔傳給 API。
+2. <code>/api/analyze</code> 重新判斷 <code>URL</code>、<code>SMS_TEXT</code> 或 <code>PHONE</code>，限制輸入長度為 2,000 字元。
+3. 內建範例直接回傳固定結果，不消耗上游額度。
+4. URL 查核可使用 RDAP、DNS、Google Safe Browsing、VirusTotal 與 ScamSniffer；文字可查 Cofacts。未設定金鑰的選配來源會明確降級。
+5. <code>ENABLE_URL_OBSERVATION</code> 預設關閉。啟用後才會由伺服器抓取 caller-supplied URL 與 redirect，且部署環境仍必須提供受限 egress，避免 SSRF／DNS rebinding。
+6. Gemini 收到輸入與事實摘要後產生分析；程式碼再套用已確認 blocklist 的風險下限，模型不能把確認惡意的結果改成安全。
+7. SMS 敘述與證據在回傳及快取前會做 PII masking。
+8. 完成結果最多留在單一 warm serverless instance 的有界記憶體 72 小時；冷啟動、不同 instance 與重新部署互不共享。
+9. 若 AI 或外部服務失敗，瀏覽器改用清楚標示的「本機安全初篩」。它只辨識壓迫、冒充、付款、可疑連結等文字模式，不宣稱已完成外部查證。
+10. Safety Assistant 的回答由目前分析、事件階段與固定規則在瀏覽器產生，不把聊天內容再送給 LLM。
 
-## Enterprise x402 Preflight Workspace
+### 2. vLEI 法人與代表權資訊流
 
-The x402 workspace keeps payment evidence and payment policy as two explicit
-lanes:
+~~~mermaid
+sequenceDiagram
+  participant O as 企業操作人員
+  participant W as vLEI 工作台
+  participant L as GLEIF API
+  participant V as 瀏覽器 CESR verifier
+  participant T as Local Timeline
+  participant H as 企業後端／QVI
 
-1. Enter an endpoint identifier, then paste or choose an x402 v2
-   `Payment-Required` JSON file. The live path strips URL credentials, query,
-   and fragment before sending the endpoint identifier and requirement through
-   the VerifyFirst API to IFF; it does not fetch the merchant endpoint.
-2. Enter the enterprise's expected `network`, `asset`, `payee`, and
-   `maxAmount`. These are policy fields, not wallet credentials.
-3. Choose **Live** to request IFF evidence, or **Simulation** to replay a
-   visibly labeled synthetic verdict without contacting IFF.
-4. Review the IFF verdict and the local policy result separately. A divergence
-   identifies the mismatched condition; stale, unobserved, unavailable, or
-   malformed evidence never becomes an implicit pass.
-5. Export an Evidence JSON envelope containing the input digest, evidence,
-   policy comparison, decision, limitations, and an unsigned SHA-256
-   self-check. The result always says `NOT_EXECUTED`.
+  O->>W: 輸入 20 字元 LEI
+  W->>L: GET 官方 LEI record
+  L-->>W: 法人、狀態、Golden Copy provenance
+  O->>W: 貼上／選擇 CESR，選 production 或 fixture root
+  W->>V: 原始 CESR（只在記憶體）
+  V->>V: framing、重複 JSON key、SAID、KEL signature
+  V->>V: ACDC edges、TEL anchoring、registry ownership
+  V->>V: 官方 schema allowlist、terminal LEI、trust root
+  V-->>W: checks、credential summaries、source digest
+  W->>W: terminal LEI 對照 15 分鐘內 GLEIF record
+  W->>T: 僅保存摘要、decision 與 SHA-256
+  W-->>O: unsigned Evidence JSON
+  O->>H: production 復驗與組織政策
+~~~
 
-This workspace is useful for integration and policy review, but it is not a
-wallet, signer, facilitator, settlement service, merchant-risk rating, or
-delivery guarantee. A production deployment must connect its own authorization,
-budget controls, signer isolation, monitoring, and execution layer after this
-preflight; those components remain outside VerifyFirst.
+重要邊界：
 
-## Enterprise Lab Deep Dives
+- LEI 查詢只證明官方資料庫中的法人紀錄，不證明提交者持有 vLEI 或具有代表權。
+- CESR 上限為 128 KiB；原始內容保持在 React state／瀏覽器記憶體，不進 localStorage、Vercel Blob 或 LLM。
+- verifier 會檢查完整 framing、每段資料是否被唯一且相連的 terminal chain 消耗、官方 schema SAID、欄位與 edge 形狀、KEL 簽章、TEL seal、registry-controller ownership 與所選 trust root。
+- 代表法人只能取自單一 terminal credential；上游 QVI 或 issuer 的 LEI 不可替代。
+- GLEIF record 必須是 <code>ACTIVE</code>／<code>ISSUED</code> 且查詢年齡不超過 15 分鐘。
+- production root 的瀏覽器結果固定要求後端復驗；仍缺 live OOBI、witness receipts、watcher duplicity、最新 KEL／TEL／revocation retrieval 與組織 root allowlist。
+- fixture 使用 commit-pinned GLEIF-IT regression data，只能當測試證據。
+- 最終 Evidence 是 unsigned SHA-256 self-check，不是簽章、可信時間戳或不可否認性證明。
 
-Two standalone static modules under `public/` remain stable for training,
-technical diagnostics, and existing demo links. Both are explicitly
-experimental and must not be treated as production identity or compliance
-decisions:
+### 3. x402 付款條件預檢資訊流
 
-- **Demo video production kit** — the
-  [Track 05–06 ComfyUI + MiniMax plan](docs/demo-video/track-05-06-comfyui-minimax-production-plan.md)
-  prioritizes real Web screen recordings, with a 120-second storyboard,
-  finalized Traditional Chinese voice-over, MiniMax prompts, a second-computer
-  handoff, legal-safe labels, and explicit live／training／simulation boundaries.
+~~~mermaid
+sequenceDiagram
+  participant O as 財務／支付操作人員
+  participant W as x402 工作台
+  participant A as /api/x402-preflight
+  participant P as 本地政策
+  participant I as ifandonlyif.io
+  participant E as Evidence export
 
-- **`/trust-pathways/`** — five pain-point pathways (manufacturing, payment,
-  government, migrant trust, RBA), a replayable 90-second judge tour, the GLEIF
-  vLEI trust-chain explainer, live GLEIF LEI lookup, GoPlus address risk, and a
-  call into the public, non-durable keripy **live demo/test backend**
-  (`services/vlei-verifier`). That Vercel service is not a production verifier
-  and is not part of a self-host production deployment.
-- **`/update-trust/`** — the vLEI *lifecycle* page. It loads the pinned
-  GLEIF-IT/vlei-verifier regression fixture (GLEIF → QVI → Legal Entity → ECR),
-  recomputes every Blake3 SAID, verifies Ed25519 KEL signatures with WebCrypto,
-  walks ACDC edges with the I2I rule, pins schema SAIDs to GLEIF-IT/vLEI-schema,
-  then issues a *proposed* short-lived Agent Delegation ACDC chained to the real
-  ECR credential, lets the supplier issue a carbon-footprint credential with
-  ACDC most-compact SAIDs so a presentation can disclose only the carbon block
-  (process／audit stay withheld as SAIDs yet every SAID still recomputes), and
-  shows how revocation, expiry, tampering and a production root-of-trust policy
-  each flip the decision to a machine-readable `DENY_*`.
-  All verifier logic lives in `public/update-trust/said.js` and is unit-tested
-  against the official BLAKE3 vectors and the fixture (`tests/update-trust.test.ts`).
-  TEL status is only the point-in-time state established by events and exact
-  KEL seals supplied in that CESR stream; it is not a live revocation query.
-  Witness receipts, live key state, live TEL retrieval, and duplicity detection
-  are explicitly left to the backend verifier. Unsupported event families fail
-  closed instead of being ignored.
+  O->>W: Endpoint + Payment-Required JSON
+  O->>W: network／asset／payee／maxAmount
+  W->>W: JSON、64 KiB、x402 v2 與欄位驗證
+  W->>A: sanitized HTTPS endpoint + requirement + policy
+  A->>A: CORS、96 KiB、rate limit、URL 再清理
+  A->>P: 逐一評估最多 16 個 payment options
+  alt 本地政策不符
+    P-->>A: HOLD_POLICY_MISMATCH
+    Note over A,I: 不呼叫 IFF
+  else 本地政策符合
+    A->>I: POST /api/v3/verify
+    I-->>A: consistent／diverged／stale／unobserved
+    A->>A: SDK 0.2 canonical fingerprint 再計算與比對
+  end
+  A-->>W: IFF evidence 與 policy decision 分離的 v2 response
+  W->>E: unsigned SHA-256 Evidence JSON
+  E-->>O: NOT_BOUND／NOT_EXECUTED
+~~~
 
-## Getting Started
+判定原則：
 
-### Prerequisites
+- Endpoint 只作為 HTTPS 識別資訊；username、password、query 與 fragment 都會移除。本流程不抓 merchant endpoint。
+- <code>Payment-Required</code> 必須是 x402 v2，至少一個、最多 16 個 option；amount 必須是正整數字串。
+- 企業 policy 對 network、asset、payee 與 maxAmount 分別比較。第一個完整符合的 option 只標示給人工覆核，狀態仍是 <code>NOT_BOUND</code>。
+- 本地 policy 先執行；不符時不浪費 IFF 請求。
+- IFF 0.2.0 的 received canonical fingerprint 必須和 VerifyFirst 本地 SDK 重算一致，否則 <code>IFF_RECEIVED_FINGERPRINT_MISMATCH</code> 並 fail closed。
+- <code>consistent</code> 只表示 requirement 與目前觀測一致，不代表 merchant 安全、企業已授權付款或一定交付。
+- LIVE 的 stale、unobserved、diverged、unavailable、格式錯誤與逾時都不會變成通過。
+- Simulation 不接觸 IFF，輸出會標示 <code>SIMULATED</code>。
+- 平台不接收私鑰、不簽名、不付款、不結算；所有輸出都是 <code>NOT_EXECUTED</code>。
 
-- Node.js 20+
-- A Google Gemini API key only when enabling live To C AI analysis
+IFF 的完整 HTTP 契約、大小限制與失敗碼請見 [docs/IFF_COMPATIBILITY.md](docs/IFF_COMPATIBILITY.md)。
 
-### Installation
+### 4. 憑證外洩應變資訊流
 
-1. Clone and install:
-   ```bash
-   git clone https://github.com/topben/cryptotruth.git
-   cd cryptotruth
-   npm ci
-   ```
+~~~mermaid
+flowchart LR
+  N["事件公告文字"] --> X["抽取疑似環境變數名稱"]
+  I["企業環境清單<br/>名稱或 KEY=value"] --> K["立即丟棄 = 後的值"]
+  X --> M["依名稱比對"]
+  K --> M
+  M --> A["撤銷 → 重建 → 部署 → 查帳 → 驗證"]
+  A --> O["負責人與完成時間"]
+  O --> H["SHA-256 Evidence ID"]
+  H --> T["本機 Trust Timeline"]
+~~~
 
-2. Configure environment:
-   ```bash
-   cp .env.example .env.local
-   ```
-   Enterprise verification and local examples run without a private key. Add a
-   Gemini key only to enable live To C AI analysis.
+- 公告原文用來抽取名稱、服務與嚴重度，但不寫入 workspace。
+- 企業可分環境輸入清單；即使貼入 <code>KEY=value</code>，程式只保留大寫 KEY，value 立即丟棄。
+- 同名 Production 環境以穩定 ID 與 system 欄位分開，不會合併成一筆。
+- 五階段處置包含撤銷舊憑證、最小權限重建、更新部署、檢查用量／帳單／存取紀錄，以及確認舊憑證失效。
+- 完成或重開任務會建立 SHA-256 Evidence ID 並寫入 local Trust Timeline。
+- 此功能不直接連線雲端 secret manager，也不自動撤銷金鑰；企業仍需在原供應商完成真正的 rotate／revoke。
 
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
+### 5. Agent 政策閘門資訊流
 
-4. Open [http://localhost:3000](http://localhost:3000).
+以下是獨立 API 的實際判定流程。現在的企業 audit 頁只提供 grant 政策編輯、撤銷、Timeline 與 audit 匯出；legacy <code>AgentSandbox</code> request runner 沒有掛載到產品介面，不能把 audit 頁誤認為已接上 production tool execution。
 
-### Tests
+~~~mermaid
+flowchart LR
+  G["短效 grant<br/>主體、目的、目標、期限"] --> API["POST /api/agent-policy"]
+  R["action request<br/>action、target、purpose、欄位名稱"] --> API
+  API --> V["格式驗證"]
+  V --> P["確定性政策<br/>ALLOW／CONFIRM／DENY"]
+  P --> E["Evidence Packet<br/>SHA-256"]
+  E --> T["Trust Timeline"]
+  P --> H["需要時由人類確認"]
+~~~
 
-```bash
-npm test
-```
+- grant 必須是 ACTIVE、未過期、未撤銷，且 agent、grant、purpose 與 target 對齊。
+- LOGIN、PAYMENT、REQUEST_OTP、DOWNLOAD_APP 等高風險 action 不會被模型放行。
+- <code>dataFields</code> 只接受欄位名稱，不應放資料值、密碼、OTP 或 token。
+- 使用 <code>services/agentGateway.ts</code> 的 production client 在 API 無法使用時一律 <code>DENY / GATE_UNAVAILABLE</code>；只有 localhost 開發環境會使用同一套本機確定性規則。
+- 瀏覽器 sandbox grant 是 caller-supplied 測試政策，不是已驗證的 production Mandate。
 
-## Environment Variables
+## 資料分類、保存與外部傳輸
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GEMINI_API_KEY` | To C live only | Google Gemini API key; not used by the deterministic enterprise lab |
-| `GEMINI_MODEL` | No | Analysis model override (default `gemini-2.5-flash`) |
-| `GEMINI_THINKING_BUDGET` | No | Unset = model default; `0` disables thinking (cheaper/faster) |
-| `MEMORY_CACHE_MAX_ENTRIES` | No | Maximum warm-instance analysis entries (default `200`, capped at `2000`) |
-| `MEMORY_RATE_LIMIT_MAX_ENTRIES` | No | Maximum warm-instance hashed IP counters (default `5000`, capped at `20000`) |
-| `GOOGLE_SAFE_BROWSING_KEY` | No | Enables Google Safe Browsing pre-check |
-| `VIRUSTOTAL_API_KEY` | No | Enables VirusTotal pre-check |
-| `GOOGLE_SHEETS_WEBHOOK_URL` | No | Sends content-free labeling metrics; never raw/sanitized input, narrative text, or quoted evidence |
-| `ENABLE_URL_OBSERVATION` | No | Exact `true` opts into server-side fetches of submitted URLs; defaults off and requires restricted egress |
-| `BOT_API_KEY` | No | `X-Bot-Key` header value that bypasses per-IP rate limiting |
-| `COFACTS_APP_ID` | No | App id sent to the Cofacts API (default `VERIFYFIRST_AI`) |
-| `IFF_BASE_URL` | No | IFF API override for staging/local testing; production defaults to `https://ifandonlyif.io` and needs no API key |
-| `VITE_ENABLE_VERCEL_ANALYTICS` | No | Public build flag; analytics are off unless explicitly set to `true` |
+| 資料 | 瀏覽器 | VerifyFirst API | 外部服務 | 保存 |
+|---|---|---|---|---|
+| To C 文字／URL／電話 | 表單與頁面記憶體 | 傳到 <code>/api/analyze</code> | Gemini 收到輸入與事實；其他來源收到必要的文字片段、URL 或 hostname | 結果可在單一 warm instance 快取最多 72 小時 |
+| To C 截圖 | FileReader + Tesseract OCR | 圖片不送出；OCR 文字在提交後送出 | OCR 資產可能由 Tesseract 預設 CDN 載入 | 圖片不由本流程持久化 |
+| To C 安全對話 | React state | 不傳送 | 不傳送 | 重新整理即消失 |
+| 選配標註指標 | 無內容統計 | API 建立 | 設定 webhook 時送 Google Sheets | 由部署者的 Sheets 政策決定 |
+| 原始 CESR | React state／WebCrypto | 不傳送 | 不傳送 | 不進 localStorage |
+| LEI | 輸入欄位 | 不經 VerifyFirst API | 瀏覽器直接查 GLEIF API | 摘要與 digest 可進 localStorage |
+| 本機 supporting documents | 瀏覽器讀檔並 SHA-256 | 不傳送 | 不傳送 | 只輸出 label、category、MIME、size、digest、時間 |
+| x402 requirement 與 policy | React state | LIVE 時送 <code>/api/x402-preflight</code> | policy 符合後 requirement 與 sanitized endpoint 送 IFF | 完整 packet 下載；localStorage 只留摘要 record |
+| 憑證事件公告 | React state | 不傳送 | 不傳送 | 原文不保存 |
+| 環境變數清單 | 瀏覽器正規化 | 不傳送 | 不傳送 | 只保存名稱、環境、任務與 Timeline |
+| Agent audit workspace | React state | audit UI 本身不送 request | 不傳送 | grant、Timeline、驗證摘要與向後相容 packet 欄位存 localStorage |
+| Agent policy API payload | 由 API caller 建立 | grant、request、選配 humanDecision | 不傳送第三方 | API 設定 <code>Cache-Control: no-store</code>；部署平台 log／retention 仍由 operator 管理 |
+| Web Analytics | 選配元件 | 依供應商 | 只有 <code>VITE_ENABLE_VERCEL_ANALYTICS=true</code> 才載入 | 依部署者設定 |
 
-## Deployment
+### localStorage keys
 
-The repository is platform-portable at the application layer. Vercel is the
-reference serverless adapter in this repository, not a proprietary requirement
-of the Evidence schemas or verification services. For runtime profiles,
-required routes, and production gaps, read [Self-hosting](docs/SELF_HOSTING.md).
+| Key | 內容 | 上限／生命週期 |
+|---|---|---|
+| <code>verifyfirst.agent-workspace.v1</code> | sandbox grant、最近 20 筆 Timeline、最多 50 筆驗證摘要，以及向後相容的 Evidence packet 陣列 | 使用者清除網站資料或在 UI 重設 |
+| <code>verifyfirst.credential-incident.v2</code> | 抽取名稱、環境識別、比對、處置任務與最多 60 筆 Timeline | 使用者在 UI 清除或清除網站資料 |
+| <code>verifyfirst.credential-incident.v1</code> | 舊格式，只作一次性 migration | migration 後移除 |
 
-### Deploy to Vercel
+本專案已取消 Vercel Blob runtime 使用。舊部署若曾建立 Blob store，仍需依 [docs/VERCEL_BLOB_RETIREMENT.md](docs/VERCEL_BLOB_RETIREMENT.md) 手動清理物件與 token。
 
-1. Push your code to GitHub
-2. Import the repository in [Vercel](https://vercel.com)
-3. Add your `GEMINI_API_KEY` as an environment variable
-4. Deploy
+## Evidence 與決策模型
 
-`vercel.json` raises `api/analyze.ts` to a 60s max duration — page observation
-plus grounded generation can exceed the default.
+### 為什麼 Evidence 不是簽章
 
-### Manual Build
+瀏覽器輸出的 Evidence 使用排序 JSON canonicalization 與 SHA-256：
 
-```bash
-npm run build
-npm run preview
-```
+~~~text
+body
+  → verifyfirst.sorted-json.v1
+  → SHA-256
+  → id: sha256:<digest>
+  → integrity.kind: SELF_CHECK_ONLY
+  → integrity.authenticity: UNSIGNED
+~~~
 
-## Project Structure
+這能在「預期 digest 由另一個可信管道保護」時偵測 body 是否改變，但任何能改 packet 的人也能重新計算 digest。因此它不提供：
 
-```
+- 發證者身分或 issuer authenticity
+- 不可否認性
+- 可信時間
+- append-only log
+- production authorization
+- 法律效力
+
+production 系統應將 Evidence 送到受控後端重跑驗證，再用組織金鑰簽章、可信時間戳或 append-only audit storage 保護結果。
+
+### 目前 Schema
+
+| Schema | 用途 |
+|---|---|
+| <code>verifyfirst.enterprise-verification.v1</code> | LEI／vLEI 企業驗證 packet |
+| [<code>verifyfirst.vlei-handoff.v1</code>](public/schemas/verifyfirst.vlei-handoff.v1.schema.json) | QVI／工程交接草稿，固定未提交、未發證 |
+| [<code>verifyfirst.x402-preflight.v2</code>](public/schemas/verifyfirst.x402-preflight.v2.schema.json) | IFF SDK 0.2.0 的 x402 Evidence |
+| [<code>verifyfirst.x402-preflight-response.v2</code>](public/schemas/verifyfirst.x402-preflight-response.v2.schema.json) | x402 API response |
+| <code>verifyfirst.agent-decision.v1</code> | Agent sandbox policy decision |
+
+x402 v1 [Evidence](public/schemas/verifyfirst.x402-preflight.v1.schema.json) 與 [API response](public/schemas/verifyfirst.x402-preflight-response.v1.schema.json) 保留給 SDK 0.1.0 歷史資料。已發布 Schema 不修改；consumer 應依 packet 的 <code>schema</code> 選擇 validator，並拒絕未知版本。
+
+### 決策與執行的分界
+
+| 模組 | 可能結果 | 執行狀態 |
+|---|---|---|
+| To C | A／B／C／D 風險 lane + degradation | 提供建議，不代替使用者行動 |
+| Agent gate | <code>ALLOW</code>、<code>REQUIRE_CONFIRMATION</code>、<code>DENY</code> | tool execution 在平台外 |
+| vLEI | <code>ALLOW_*</code>／<code>DENY_*</code>；production browser result 仍要求 backend | 不發證、不撤銷、不執行 tool |
+| x402 | READY／HOLD／DENY + IFF state | <code>NOT_BOUND</code>、<code>NOT_EXECUTED</code> |
+| 憑證應變 | PENDING／COMPLETED 任務 | 不直接操作供應商 secret |
+
+## API 與失敗行為
+
+### <code>POST /api/analyze</code>
+
+輸入概念：
+
+~~~json
+{
+  "input": "https://example.com",
+  "inputType": "URL",
+  "language": "zh-TW",
+  "forceRefresh": false
+}
+~~~
+
+- 最多 2,000 字元；支援 <code>URL</code>、<code>SMS_TEXT</code>、<code>PHONE</code>。
+- 每個 hashed IP、每個 warm instance 每小時最佳努力 10 次；cache hit 不計。
+- <code>X-Bot-Key</code> 可供可信 server-to-server caller 繞過此本機限制，但不可放進瀏覽器。
+- 外部來源失敗會回傳 degradation；Gemini／整體失敗時前端使用本機初篩。
+- 這不是全域 quota。真正的濫用控制需由 gateway、Durable store 或供應商 budget 完成。
+
+### <code>POST /api/agent-policy</code>
+
+輸入為 <code>{ grant, request, humanDecision? }</code>，輸出確定性 result、Evidence Packet 與 <code>NOT_EXECUTED</code> 邊界。錯誤格式回 400，非 POST 回 405。
+
+- JSON 序列化後上限 32,000 字元；action 必須來自固定 allowlist，陣列最多 32 項。
+- 目前 endpoint 回傳 <code>Access-Control-Allow-Origin: *</code>，因為它是無帳號、caller-supplied grant 的實驗 API，不是 production authorization service。公開部署前應由 gateway 收斂 origin、authentication、tenant policy、durable rate limit 與 audit retention。
+- 企業 audit UI 不會自動呼叫這個 endpoint；需要由整合方或未來明確掛載的 request runner 呼叫。
+
+### <code>POST /api/x402-preflight</code>
+
+輸入概念：
+
+~~~json
+{
+  "endpointUrl": "https://merchant.example/paid-resource",
+  "paymentRequired": {
+    "x402Version": 2,
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "asset": "0x0000000000000000000000000000000000000000",
+        "amount": "1000",
+        "payTo": "0x1111111111111111111111111111111111111111"
+      }
+    ]
+  },
+  "policy": {
+    "allowedNetworks": ["eip155:8453"],
+    "allowedAssets": ["0x0000000000000000000000000000000000000000"],
+    "allowedPayees": ["0x1111111111111111111111111111111111111111"],
+    "maxAmount": "1000"
+  }
+}
+~~~
+
+- Request body 上限 96 KiB。
+- 每個 hashed IP、每個 warm instance 每分鐘最佳努力 30 次；map 最多 5,000 筆。
+- same-origin 預設；<code>X402_ALLOWED_ORIGIN</code> 只接受一個精確 HTTPS origin，不支援 wildcard。
+- <code>BOT_API_KEY</code> 使用 SHA-256 digest 與 constant-time bytes comparison。
+- IFF 預設 timeout 5 秒、response 上限 256 KiB；HTTP、逾時、格式與 fingerprint mismatch 都保持 unavailable／hold。
+- API response 使用 <code>verifyfirst.x402-preflight-response.v2</code>。
+
+## 技術棧與專案結構
+
+### 技術棧
+
+- Frontend：React 19、TypeScript、Vite 6、Tailwind 3 utilities、repository-owned CSS tokens
+- Server：Node.js 20 相容的 Vercel Serverless Functions
+- AI：Google Gemini 2.5 Flash + Google Search grounding（只用於 To C LIVE）
+- OCR：Tesseract.js 7，lazy-loaded、瀏覽器執行
+- vLEI：WebCrypto Ed25519、BLAKE3／SAID、KERI／ACDC／TEL 邏輯
+- x402：<code>@ifandonlyif/x402-preflight@0.2.0</code>
+- Test：Vitest、TypeScript typecheck、Vite production build
+- Storage：瀏覽器 localStorage + 有界 warm-instance memory；無 Vercel Blob runtime dependency
+- License：原始程式 MIT；上游 fixture／schema／verifier 材料依 THIRD_PARTY_NOTICES 保留 Apache-2.0 等原授權
+
+### 專案結構
+
+~~~text
 cryptotruth/
 ├── apps/
 │   └── business/
-│       └── BusinessApp.tsx   # To B enterprise lab entry (experimental)
+│       └── BusinessApp.tsx          # To B 入口、模組路由與本機 workspace
 ├── api/
-│   ├── analyze.ts            # Serverless endpoint: pre-checks → Gemini → post-processing
-│   ├── agent-policy.ts       # Deterministic Agent gate + SHA-256 evidence
-│   ├── example-responses.ts  # Canned responses for demo chips (zero quota)
-│   └── safe-domains.ts       # Exact operator-listed domain identity hint; never a safety bypass
+│   ├── analyze.ts                   # To C 證據協調、Gemini、後處理、快取
+│   ├── agent-policy.ts              # 確定性 Agent gate
+│   ├── x402-preflight.ts            # x402 policy + IFF API
+│   ├── example-responses.ts         # 零上游額度的固定範例
+│   └── safe-domains.ts              # 精確 hostname 身分提示；不是安全 bypass
 ├── components/
-│   ├── business/             # Integrated LEI + vLEI/CESR verification workspace
-│   ├── consumer/             # To C guided intake + safety conversation
-│   └── *.tsx                 # Shared and legacy feature components
+│   ├── consumer/                    # 情境輸入與本機 Safety Assistant
+│   ├── business/                    # LEI／vLEI 與 x402 工作台
+│   ├── CredentialIncidentResponse.tsx
+│   ├── SandboxControl.tsx
+│   └── 其他 To C 結果與共用 UI
 ├── services/
-│   ├── agentPolicy.ts        # Deterministic Agent authorization gate
-│   ├── agentEvidence.ts      # Agent policy Evidence Packet hashing
-│   ├── evidenceIntegrity.ts  # Unsigned enterprise Evidence Packet self-check
-│   ├── agentGateway.ts       # Server gate client with local static-host fallback
-│   ├── credentialIncident.ts # Local-only secret-name matching + response plan
-│   ├── gleif.ts              # Bounded, fail-closed official LEI lookup
-│   ├── vleiClient.ts         # Production-safe wrapper around the canonical verifier
-│   └── geminiService.ts      # Frontend client for /api/analyze
-├── tests/                    # Vitest unit + handler integration tests
+│   ├── geminiService.ts             # 瀏覽器 → /api/analyze
+│   ├── localSafetyFallback.ts       # 外部服務失敗時的本機規則
+│   ├── agentPolicy.ts               # Agent 確定性規則
+│   ├── agentEvidence.ts             # Agent Evidence SHA-256
+│   ├── agentGateway.ts              # production fail-closed gateway client
+│   ├── credentialIncident.ts        # 秘密名稱抽取、比對與處置計畫
+│   ├── evidenceIntegrity.ts         # Evidence canonicalization／self-check
+│   ├── gleif.ts                     # bounded official LEI lookup
+│   ├── vleiClient.ts                # strict browser CESR wrapper
+│   ├── vleiHandoff.ts               # QVI／工程交接格式
+│   ├── localDocumentManifest.ts     # 本機文件雜湊
+│   ├── iffX402.ts                   # IFF transport 與 canonical fingerprint
+│   └── x402Policy.ts                # x402 v2 parsing 與企業政策
 ├── public/
-│   ├── trust-pathways/       # Hackathon demo: five pathways + judge tour + vLEI lab
-│   └── update-trust/         # vLEI lifecycle page: said.js verifier + pinned fixture
-├── App.tsx                   # To C multilingual anti-scam product
-├── index.tsx                 # Route-level split; lazy-loads one product
-├── types.ts
+│   ├── schemas/                     # 公開、版本化 JSON Schema
+│   ├── trust-pathways/              # 情境示範與技術導覽
+│   ├── update-trust/                # vLEI lifecycle verifier
+│   └── privacy/                     # 公開資料處理說明
+├── services/vlei-verifier/          # 非 durable 的 demo/test backend
+├── docs/                            # 邊界、自架、IFF 契約、Blob 退場與影片計畫
+├── tests/                           # 單元、handler integration、schema boundary
+├── App.tsx                          # To C 主程式
+├── index.tsx                        # route-level lazy split
+├── types.ts                         # 共用資料契約
+├── styles.css
+├── vercel.json
 └── vite.config.ts
-```
+~~~
 
-## API Rate Limits
+## 本機開發
 
-- Best-effort **10 requests per hour per hashed IP, per warm serverless
-  instance** (cache hits do not count). Cold starts and parallel instances have
-  independent counters, so this is not a global Gemini quota boundary.
-- Results remain in a bounded warm-instance cache for up to **72 hours**
-- Rate-limit counters are also warm-instance only; no request reads or writes
-  metered storage
-- Retiring an older Blob deployment requires the one-time
-  [Vercel Blob cleanup checklist](docs/VERCEL_BLOB_RETIREMENT.md); a code deploy
-  cannot delete historical public objects or revoke the old token.
+### 前置需求
 
-## Disclaimer
+- Node.js 20+
+- npm 10.9.3（以 <code>packageManager</code> 為準）
+- 只有啟用 To C LIVE AI 時需要 Gemini API key
+- 企業本機驗證、LEI 公開查詢、x402 simulation 與固定 fixture 不需要私有 LLM key
 
-This tool provides AI-generated analysis based on publicly available
-information. It is a first-step aid, not a guarantee — when in doubt, call
-Taiwan's 165 anti-fraud hotline. Accuracy depends on the AI model and
-available web data.
+### 安裝
 
-## Contributing
+~~~bash
+git clone https://github.com/topben/cryptotruth.git
+cd cryptotruth
+npm ci
+cp .env.example .env.local
+npm run dev
+~~~
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+開啟：
 
-## Security
+- To C：[http://localhost:3000/](http://localhost:3000/)
+- To B：[http://localhost:3000/business/](http://localhost:3000/business/)
+- Trust Pathways：[http://localhost:3000/trust-pathways/](http://localhost:3000/trust-pathways/)
+- Update Trust：[http://localhost:3000/update-trust/](http://localhost:3000/update-trust/)
 
-For security vulnerabilities, please see our [Security Policy](SECURITY.md).
+純 Vite dev server 不會自動提供 Vercel Functions。To C LIVE、x402 LIVE 與 server Agent API 需要 Vercel dev 或其他 Node adapter；靜態／本機流程必須在缺少 LIVE API 時明確顯示失敗或降級，不可偽裝成 LIVE 成功。
 
-## License
+### 驗證
 
-VerifyFirst's original code is licensed under the MIT License; see
-[LICENSE](LICENSE). Vendored fixtures, schema provenance and container inputs
-retain their upstream licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md)
-and [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt).
+~~~bash
+npm run typecheck
+npm test
+npm run build
+npm audit --omit=dev
+~~~
 
-## Acknowledgments
+目前測試涵蓋：
 
-- Powered by [Google Gemini](https://ai.google.dev/) with Google Search grounding
-- Community fact-checks from [Cofacts 真的假的](https://cofacts.tw)
-- Blocklists from [ScamSniffer](https://scamsniffer.io) and [VirusTotal](https://virustotal.com)
-- Built with [React](https://react.dev/) and [Vite](https://vitejs.dev/), deployed on [Vercel](https://vercel.com/)
+- Agent policy 與 Evidence integrity
+- To C handler、快取、降級與安全下限
+- GLEIF bounded lookup
+- vLEI framing、schema、KEL、ACDC、TEL、root 與 LEI cross-check
+- local document manifest
+- credential incident response
+- x402 parser、policy、IFF compatibility、API、rate limit 與 CORS
+- Trust Pathways／Update Trust 靜態邊界
+- open-source readiness 與產品隔離
+
+## 環境變數
+
+| 變數 | 必要性 | 用途與邊界 |
+|---|---|---|
+| <code>GEMINI_API_KEY</code> | To C LIVE 必要 | 只在 server 使用，不可加 <code>VITE_</code> |
+| <code>GEMINI_MODEL</code> | 選配 | 預設 <code>gemini-2.5-flash</code> |
+| <code>GEMINI_THINKING_BUDGET</code> | 選配 | 未設定使用模型預設；<code>0</code> 關閉 thinking |
+| <code>GOOGLE_SAFE_BROWSING_KEY</code> | 選配 | 啟用 URL threat pre-check |
+| <code>VIRUSTOTAL_API_KEY</code> | 選配 | 啟用 domain reputation |
+| <code>COFACTS_APP_ID</code> | 選配 | 預設 <code>VERIFYFIRST_AI</code> |
+| <code>GOOGLE_SHEETS_WEBHOOK_URL</code> | 選配 | 只送無內容標註指標；部署前須揭露 |
+| <code>ENABLE_URL_OBSERVATION</code> | 選配 | 只有精確 <code>true</code> 啟用 server URL fetch；需要受限 egress |
+| <code>BOT_API_KEY</code> | 選配 | server-to-server rate-limit bypass；不可進瀏覽器 |
+| <code>IFF_BASE_URL</code> | 選配 | 預設 <code>https://ifandonlyif.io</code>；只允許 HTTPS 或 loopback HTTP |
+| <code>X402_ALLOWED_ORIGIN</code> | 選配 | 一個精確 HTTPS cross-origin caller |
+| <code>VITE_ENABLE_VERCEL_ANALYTICS</code> | 選配 | 預設 false；true 才載入 analytics |
+| <code>VITE_TESSERACT_WORKER_PATH</code> | 選配 | 自架 OCR worker 公開 URL |
+| <code>VITE_TESSERACT_CORE_PATH</code> | 選配 | 自架 OCR core 公開 URL |
+| <code>VITE_TESSERACT_LANG_PATH</code> | 選配 | 自架 OCR language data URL |
+| <code>MEMORY_CACHE_MAX_ENTRIES</code> | 選配 | 預設 200、最小 10、上限 2,000 |
+| <code>MEMORY_RATE_LIMIT_MAX_ENTRIES</code> | 選配 | 預設 5,000、最小 100、上限 20,000 |
+
+請以 [.env.example](.env.example) 為實際設定起點。所有 secret 只能留在 server；不要 commit <code>.env</code>、token、私有 fixture 或使用者提交資料。
+
+## 部署與自架
+
+### Vercel 參考部署
+
+1. Fork 或 clone repository。
+2. 在 Vercel 匯入專案。
+3. 若需要 To C LIVE，設定 <code>GEMINI_API_KEY</code> 與選配證據來源。
+4. 部署。<code>vercel.json</code> 會將 <code>/business</code> rewrite 到 SPA，並把 <code>api/analyze.ts</code> max duration 設為 60 秒。
+5. 依實際啟用來源發布 privacy notice、retention policy 與 provider list。
+6. 為 Gemini、VirusTotal、Safe Browsing 與外部 API 設定 provider-side quota／alert；warm-instance rate limit 不是全域防護。
+
+### 其他平台
+
+部署 <code>npm run build</code> 產生的 <code>dist/</code>，並提供 Node.js 20 相容 adapter 對應三個 API。SPA host 至少要將 <code>/business</code> 與 <code>/business/</code> rewrite 到 <code>index.html</code>。
+
+完全靜態部署仍可使用：
+
+- To C 固定範例與本機安全初篩
+- x402 simulation
+- 本機文件 manifest
+- pinned vLEI fixture 與瀏覽器驗證
+- Trust Pathways／Update Trust 靜態內容
+
+LIVE route 缺少 server adapter 時必須回報不可用，不能靜默切成模擬結果。完整說明請見 [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) 與 [SECURITY.md](SECURITY.md)。
+
+## 測試、貢獻與授權
+
+### Pull request 檢查
+
+1. 標示影響 To C、To B 或 shared infrastructure。
+2. 說明資料是否跨越 browser／server／external boundary。
+3. 為安全下限、格式錯誤、上游失敗與 migration 補測試。
+4. 修改共用 routing、CSS 或部署設定時，驗證 <code>/</code>、<code>/business/</code>、<code>/trust-pathways/</code>、<code>/update-trust/</code>。
+5. 不得移除 experimental／simulation／unsigned／NOT_EXECUTED 標示，除非有相應 production evidence 與 maintainer review。
+6. 公開 Schema 不可原地修改；新增版本並保留歷史 validator。
+
+歡迎貢獻，請閱讀 [CONTRIBUTING.md](CONTRIBUTING.md)、[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) 與 [SECURITY.md](SECURITY.md)。
+
+VerifyFirst 原始程式碼採 [MIT License](LICENSE)。重新散布的 fixture、schema provenance 與 verifier material 保留各自授權，詳見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 與 [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt)。
+
+## 致謝
+
+- [Google Gemini](https://ai.google.dev/) 與 Google Search grounding
+- [Cofacts 真的假的](https://cofacts.tw)
+- [ScamSniffer](https://scamsniffer.io/)、[VirusTotal](https://virustotal.com/) 與 Google Safe Browsing
+- [GLEIF](https://www.gleif.org/) 與 GLEIF-IT vLEI open-source materials
+- [ifandonlyif.io](https://ifandonlyif.io/) 與 x402 ecosystem
+- [React](https://react.dev/)、[Vite](https://vite.dev/) 與所有開源依賴
