@@ -416,7 +416,7 @@ const BusinessApp: React.FC = () => {
         </main>
       )}
 
-      <footer className="vf-footer"><div className="vf-container vf-footer-inner"><p>{t.source}</p><div className="vf-footer-services"><a href="https://github.com/topben/cryptotruth" target="_blank" rel="noreferrer"><Github size={13} />GitHub</a><a href="/privacy/">Data processing</a><a href="/trust-pathways/">Trust Pathways</a><a href="/update-trust/">Update Trust</a></div></div></footer>
+      <footer className="vf-footer"><div className="vf-container vf-footer-inner"><p>{t.source}</p><div className="vf-footer-services"><a href="https://github.com/topben/cryptotruth" target="_blank" rel="noreferrer"><Github size={13} />GitHub</a></div></div></footer>
     </div>
   );
 };

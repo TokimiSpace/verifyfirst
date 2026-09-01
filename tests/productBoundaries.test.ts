@@ -11,6 +11,7 @@ const assistant = read('components/consumer/SafetyAssistant.tsx');
 const x402Workbench = read('components/business/X402Workbench.tsx');
 const x402Api = read('api/x402-preflight.ts');
 const x402Policy = read('services/x402Policy.ts');
+const trustVerification = read('components/business/TrustVerificationPanel.tsx');
 const vleiIntake = read('components/business/VleiImplementationIntake.tsx');
 const documentManifest = read('services/localDocumentManifest.ts');
 const vleiHandoff = read('services/vleiHandoff.ts');
@@ -47,8 +48,8 @@ describe('To C / To B product boundaries', () => {
   it('marks every enterprise entry as experimental and links the lab modules', () => {
     expect(business).toContain('EXPERIMENTAL · 實驗性功能');
     expect(business).toContain('尚未承諾 SLA');
-    expect(business).toContain('href="/trust-pathways/"');
-    expect(business).toContain('href="/update-trust/"');
+    expect(trustVerification).toContain('href="/trust-pathways/"');
+    expect(trustVerification).toContain('href="/update-trust/"');
     expect(business).toContain('<TrustVerificationPanel');
     expect(business).toContain('<X402Workbench');
     expect(business).toContain("url.searchParams.set('module', 'vlei')");

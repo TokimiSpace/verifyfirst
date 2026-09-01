@@ -82,13 +82,17 @@ describe('open-source and self-hosting contract', () => {
     expect(selfHosting).toContain('The model is never the verifier');
   });
 
-  it('links a public data-processing notice beside the To C input and in both product footers', () => {
+  it('links a public data-processing notice beside the To C input without crowding product footers', () => {
     const notice = read('public/privacy/index.html');
+    const consumer = read('App.tsx');
+    const business = read('apps/business/BusinessApp.tsx');
     expect(notice).toContain('DATA PROCESSING NOTICE');
     expect(notice).toContain('72 小時');
     expect(notice).toContain('Self-hosters must publish a notice');
     expect(read('components/SearchInput.tsx')).toContain('href="/privacy/"');
-    expect(read('App.tsx')).toContain('href="/privacy/"');
-    expect(read('apps/business/BusinessApp.tsx')).toContain('href="/privacy/"');
+    expect(consumer).not.toContain('href="/privacy/"');
+    expect(business).not.toContain('href="/privacy/"');
+    expect(business).not.toContain('href="/trust-pathways/"');
+    expect(business).not.toContain('href="/update-trust/"');
   });
 });

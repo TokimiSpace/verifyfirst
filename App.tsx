@@ -961,8 +961,6 @@ const App: React.FC = () => {
               <span>Open source</span>
             </a>
             <span className="text-gray-700">·</span>
-            <a href="/privacy/" className="flex items-center gap-1 hover:text-gray-300 transition-colors">資料處理說明</a>
-            <span className="text-gray-700">·</span>
             <a href="/business/" className="flex items-center gap-1 hover:text-gray-300 transition-colors"><Building2 className="w-3 h-3" /><span>{landing.businessLabel}</span></a>
           </div>
         </div>
