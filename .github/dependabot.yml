@@ -10,3 +10,8 @@ updates:
         dependency-type: production
       npm-development:
         dependency-type: development
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
