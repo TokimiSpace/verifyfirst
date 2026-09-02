@@ -5,7 +5,7 @@
 If you discover a security vulnerability, please report it responsibly:
 
 1. **Do not** open a public issue
-2. Use [GitHub private vulnerability reporting](https://github.com/topben/cryptotruth/security/advisories/new)
+2. Use [GitHub private vulnerability reporting](https://github.com/TokimiSpace/verifyfirst/security/advisories/new)
 3. Include a detailed description of the vulnerability
 4. Provide steps to reproduce if possible
 

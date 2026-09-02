@@ -566,8 +566,8 @@ decisions:
 
 1. Clone and install:
    ```bash
-   git clone https://github.com/topben/cryptotruth.git
-   cd cryptotruth
+   git clone https://github.com/TokimiSpace/verifyfirst.git
+   cd verifyfirst
    npm ci
    ```
 
@@ -636,7 +636,7 @@ npm run preview
 ## Project Structure
 
 ```
-cryptotruth/
+verifyfirst/
 ├── apps/
 │   └── business/
 │       └── BusinessApp.tsx   # To B enterprise lab entry (experimental)
@@ -697,10 +697,24 @@ For security vulnerabilities, please see our [Security Policy](SECURITY.md).
 
 ## License
 
-VerifyFirst's original code is licensed under the MIT License; see
-[LICENSE](LICENSE). Vendored fixtures, schema provenance and container inputs
-retain their upstream licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md)
-and [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt).
+VerifyFirst's original code, documentation, and project-created assets are
+licensed under the MIT License; see [LICENSE](LICENSE). Vendored fixtures,
+dependencies, schema provenance, and container inputs retain their upstream
+licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md) and
+[`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt). The MIT copyright license
+does not grant permission to present a fork as the official VerifyFirst or
+TokimiSpace service; see [Trademarks](TRADEMARKS.md). For the complete commercial
+use, contribution, and relicensing policy, see [Licensing strategy](LICENSING.md).
+
+## Open-source governance
+
+[TokimiSpace/verifyfirst](https://github.com/TokimiSpace/verifyfirst) is the
+public source of truth for code, issues, pull requests, releases, and security
+advisories. The former `topben/cryptotruth` repository is retained as a private
+deployment/history mirror. It is not a community contribution endpoint and
+must not contain committed secrets or user data. See
+[Open-source governance](docs/OPEN_SOURCE_GOVERNANCE.md) for maintenance roles,
+versioning, mirroring, and release rules.
 
 ## Acknowledgments
 

@@ -6,9 +6,19 @@ const read = (file: string) => fs.readFileSync(path.resolve(file), 'utf8');
 
 describe('open-source and self-hosting contract', () => {
   it('publishes an MIT license and reproducible contributor workflow', () => {
-    const pkg = JSON.parse(read('package.json')) as { license?: string; packageManager?: string; scripts?: Record<string, string> };
+    const pkg = JSON.parse(read('package.json')) as {
+      license?: string;
+      packageManager?: string;
+      scripts?: Record<string, string>;
+      repository?: { url?: string };
+      bugs?: { url?: string };
+    };
     expect(pkg.license).toBe('MIT');
     expect(read('LICENSE')).toContain('MIT License');
+    expect(read('LICENSE')).toContain('Copyright (c) 2025 CryptoTruth');
+    expect(read('LICENSE')).toContain('Copyright (c) 2026 TokimiSpace contributors');
+    expect(pkg.repository?.url).toBe('https://github.com/TokimiSpace/verifyfirst.git');
+    expect(pkg.bugs?.url).toBe('https://github.com/TokimiSpace/verifyfirst/issues');
     expect(pkg.scripts).toMatchObject({ build: 'vite build', test: 'vitest run', typecheck: 'tsc --noEmit' });
     expect(pkg.packageManager).toBe('npm@10.9.3');
     expect(read('.nvmrc').trim()).toBe('22.19.0');
@@ -21,6 +31,33 @@ describe('open-source and self-hosting contract', () => {
     expect(ci).toContain('npm test');
     expect(ci).toContain('npm run build');
     expect(read('.github/dependabot.yml')).toContain('package-ecosystem: npm');
+  });
+
+  it('documents licensing, provenance, trademark, and contribution governance', () => {
+    const licensing = read('LICENSING.md');
+    const contributing = read('CONTRIBUTING.md');
+    const governance = read('docs/OPEN_SOURCE_GOVERNANCE.md');
+    const pullRequestTemplate = read('.github/PULL_REQUEST_TEMPLATE.md');
+
+    expect(licensing).toContain('inbound = outbound');
+    expect(licensing).toContain('THIRD_PARTY_NOTICES.md');
+    expect(licensing).toContain('TRADEMARKS.md');
+    expect(contributing).toContain('Developer Certificate of Origin (DCO)');
+    expect(contributing).toContain('git commit -s');
+    expect(governance).toContain('TokimiSpace/verifyfirst');
+    expect(governance).toContain('Private deployment/history mirror');
+    expect(pullRequestTemplate).toContain('DCO `Signed-off-by`');
+    expect(read('.github/CODEOWNERS')).toContain('@topben');
+  });
+
+  it('uses the public TokimiSpace repository for product and security links', () => {
+    const canonical = 'https://github.com/TokimiSpace/verifyfirst';
+    expect(read('README.md')).toContain(`${canonical}.git`);
+    expect(read('README.en.md')).toContain(`${canonical}.git`);
+    expect(read('App.tsx')).toContain(`href="${canonical}"`);
+    expect(read('apps/business/BusinessApp.tsx')).toContain(`href="${canonical}"`);
+    expect(read('SECURITY.md')).toContain(`${canonical}/security/advisories/new`);
+    expect(read('public/privacy/index.html')).toContain(`${canonical}/security/advisories/new`);
   });
 
   it('keeps secrets untracked and analytics opt-in', () => {

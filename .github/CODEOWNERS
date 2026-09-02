@@ -1,0 +1,10 @@
+# Default review owner for the public VerifyFirst repository.
+* @topben
+
+# Trust boundaries and public evidence contracts require maintainer review.
+/api/ @topben
+/services/ @topben
+/public/schemas/ @topben
+/SECURITY.md @topben
+/LICENSING.md @topben
+/TRADEMARKS.md @topben

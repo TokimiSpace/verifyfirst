@@ -11,10 +11,10 @@
   "homepage": "https://verify1st.tw",
   "repository": {
     "type": "git",
-    "url": "https://github.com/topben/cryptotruth.git"
+    "url": "https://github.com/TokimiSpace/verifyfirst.git"
   },
   "bugs": {
-    "url": "https://github.com/topben/cryptotruth/issues"
+    "url": "https://github.com/TokimiSpace/verifyfirst/issues"
   },
   "keywords": [
     "anti-scam",

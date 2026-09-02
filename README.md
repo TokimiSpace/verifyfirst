@@ -27,6 +27,7 @@ To C 支援繁體中文、英文與越南文，先詢問事件進度，再查核
 - [環境變數](#環境變數)
 - [部署與自架](#部署與自架)
 - [測試、貢獻與授權](#測試貢獻與授權)
+- [開源治理](#開源治理)
 
 ## 產品原則
 
@@ -317,7 +318,7 @@ x402 v1 [Evidence](public/schemas/verifyfirst.x402-preflight.v1.schema.json) 與
 ### 專案結構
 
 ~~~text
-cryptotruth/
+verifyfirst/
 ├── apps/
 │   └── business/
 │       └── BusinessApp.tsx          # To B 入口、模組路由與本機 workspace
@@ -375,8 +376,8 @@ cryptotruth/
 ### 安裝
 
 ~~~bash
-git clone https://github.com/topben/cryptotruth.git
-cd cryptotruth
+git clone https://github.com/TokimiSpace/verifyfirst.git
+cd verifyfirst
 npm ci
 cp .env.example .env.local
 npm run dev
@@ -474,7 +475,11 @@ LIVE route 缺少 server adapter 時必須回報不可用，不能靜默切成�
 
 歡迎貢獻，請閱讀 [CONTRIBUTING.md](CONTRIBUTING.md)、[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) 與 [SECURITY.md](SECURITY.md)。
 
-VerifyFirst 原始程式碼採 [MIT License](LICENSE)。重新散布的 fixture、schema provenance 與 verifier material 保留各自授權，詳見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 與 [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt)。
+VerifyFirst 原始程式碼、文件與專案自製素材採 [MIT License](LICENSE)。重新散布的 fixture、schema provenance、依賴與 verifier material 保留各自授權，詳見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 與 [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt)。VerifyFirst 與 TokimiSpace 名稱、網域及識別標誌不因 MIT 授權而自動取得官方品牌使用權，詳見 [TRADEMARKS.md](TRADEMARKS.md)。完整的授權選擇、貢獻規則與商用說明請見 [LICENSING.md](LICENSING.md)。
+
+## 開源治理
+
+[TokimiSpace/verifyfirst](https://github.com/TokimiSpace/verifyfirst) 是程式碼、issue、pull request、release 與安全公告的公開主來源。原本的 `topben/cryptotruth` 保留為 private 部署／歷史鏡像，不是接受社群貢獻的入口，也不得保存已提交到 Git 的秘密或使用者資料。版本、維護角色、同步方式與發布規則詳見 [docs/OPEN_SOURCE_GOVERNANCE.md](docs/OPEN_SOURCE_GOVERNANCE.md)。
 
 ## 致謝
 

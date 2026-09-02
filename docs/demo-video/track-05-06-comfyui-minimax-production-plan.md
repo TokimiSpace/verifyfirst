@@ -430,8 +430,8 @@ DECLARATION ATTRIBUTABLE · TRUTHFULNESS NOT AUTOMATICALLY PROVEN
 ### 1. 取得文件與網站原始碼
 
 ```bash
-git clone https://github.com/topben/cryptotruth.git
-cd cryptotruth
+git clone https://github.com/TokimiSpace/verifyfirst.git
+cd verifyfirst
 git pull origin main
 ```
 

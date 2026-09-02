@@ -4,6 +4,8 @@ VerifyFirst's original source code is licensed under the repository's MIT
 License. The following files and build inputs retain their upstream licenses.
 The Apache License 2.0 text is included at
 [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt).
+The rules for new contributions and third-party additions are documented in
+[`LICENSING.md`](LICENSING.md).
 
 ## GLEIF-IT/vlei-verifier
 

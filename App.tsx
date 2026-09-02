@@ -952,7 +952,7 @@ const App: React.FC = () => {
             </a>
             <span className="text-gray-700">·</span>
             <a
-              href="https://github.com/topben/cryptotruth"
+              href="https://github.com/TokimiSpace/verifyfirst"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 hover:text-gray-300 transition-colors"
