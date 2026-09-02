@@ -55,6 +55,7 @@ describe('open-source and self-hosting contract', () => {
     expect(read('README.md')).toContain(`${canonical}.git`);
     expect(read('README.en.md')).toContain(`${canonical}.git`);
     expect(read('App.tsx')).toContain(`href="${canonical}"`);
+    expect(read('App.tsx')).toContain('href="https://ifandonlyif.io"');
     expect(read('apps/business/BusinessApp.tsx')).toContain(`href="${canonical}"`);
     expect(read('SECURITY.md')).toContain(`${canonical}/security/advisories/new`);
     expect(read('public/privacy/index.html')).toContain(`${canonical}/security/advisories/new`);

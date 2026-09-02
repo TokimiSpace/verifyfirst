@@ -952,6 +952,16 @@ const App: React.FC = () => {
             </a>
             <span className="text-gray-700">·</span>
             <a
+              href="https://ifandonlyif.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 hover:text-gray-300 transition-colors"
+            >
+              <CheckCircle2 className="w-3 h-3" />
+              <span>ifandonlyif.io</span>
+            </a>
+            <span className="text-gray-700">·</span>
+            <a
               href="https://github.com/TokimiSpace/verifyfirst"
               target="_blank"
               rel="noopener noreferrer"
