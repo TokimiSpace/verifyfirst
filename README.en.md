@@ -710,11 +710,8 @@ use, contribution, and relicensing policy, see [Licensing strategy](LICENSING.md
 
 [TokimiSpace/verifyfirst](https://github.com/TokimiSpace/verifyfirst) is the
 public source of truth for code, issues, pull requests, releases, and security
-advisories. The former `topben/cryptotruth` repository is retained as a private
-deployment/history mirror. It is not a community contribution endpoint and
-must not contain committed secrets or user data. See
-[Open-source governance](docs/OPEN_SOURCE_GOVERNANCE.md) for maintenance roles,
-versioning, mirroring, and release rules.
+advisories. See [Open-source governance](docs/OPEN_SOURCE_GOVERNANCE.md) for
+maintenance roles, versioning, and release rules.
 
 ## Acknowledgments
 

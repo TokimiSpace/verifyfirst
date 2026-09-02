@@ -479,7 +479,7 @@ VerifyFirst 原始程式碼、文件與專案自製素材採 [MIT License](LICEN
 
 ## 開源治理
 
-[TokimiSpace/verifyfirst](https://github.com/TokimiSpace/verifyfirst) 是程式碼、issue、pull request、release 與安全公告的公開主來源。原本的 `topben/cryptotruth` 保留為 private 部署／歷史鏡像，不是接受社群貢獻的入口，也不得保存已提交到 Git 的秘密或使用者資料。版本、維護角色、同步方式與發布規則詳見 [docs/OPEN_SOURCE_GOVERNANCE.md](docs/OPEN_SOURCE_GOVERNANCE.md)。
+[TokimiSpace/verifyfirst](https://github.com/TokimiSpace/verifyfirst) 是程式碼、issue、pull request、release 與安全公告的公開主來源。版本、維護角色與發布規則詳見 [docs/OPEN_SOURCE_GOVERNANCE.md](docs/OPEN_SOURCE_GOVERNANCE.md)。
 
 ## 致謝
 
